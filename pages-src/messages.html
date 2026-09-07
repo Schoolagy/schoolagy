@@ -1,0 +1,2581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Messages</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from grades.html so
+     this page reads as the same app, not a reskin. Grade-color tokens
+     (--grade-good etc.) aren't needed here and are left out. See
+     architecture-decisions.md for the note about promoting this to an
+     actual shared stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    background-color: var(--page-bg-end);
+    background-image: url("data:image/png;base64,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");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 100px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 980px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* kept as a fallback; in practice .msgs-shell
+      below is height-capped and scrolls its own content internally
+      (see .msgs-thread-list / .msgs-bubbles / etc.), so this almost
+      never actually engages. Messages-specific (2026-09-04, per
+      Martin): unlike the other pages in this app, a chat UI's list
+      and conversation panes should behave like a real messaging app
+      -- fixed header/search/composer chrome, only the middle scrolls
+      -- so this page keeps the windowed pattern the rest of the app
+      moved away from. */
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Top bar — copied verbatim ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 2px 0 0 2px;
+  }
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: #b6432f; }
+
+  /* ---------- Messages shell (new 2026-09-01) — built from Martin's
+     Messages.pdf rough wireframe: a "+" compose button and a filter
+     icon above a search bar, a scrollable thread list (each row an
+     avatar circle, the top one shown with a timestamp + sender name and
+     highlighted when unread), and a right-hand pane with a header block,
+     a right-aligned accent-colored sent bubble, and a rounded compose
+     pill at the bottom. Kept as a two-pane master/detail layout on
+     desktop; collapses to list-then-thread on narrow screens (see the
+     mobile media query) since the wireframe didn't specify mobile
+     behavior but every other page in this app supports it.
+     Per site-map.md/architecture-decisions.md: Messages is an opt-in
+     Social feature (off by default in Onboarding) and is meant to be
+     backed by the real Schoology Messages API (GET /v1/messages/inbox,
+     POST /v1/messages, etc.) — this static mock always shows the page
+     rather than checking that toggle (there's no persisted settings
+     state across these standalone pages yet), but a real build must
+     hide this nav item / block this route when the user hasn't opted
+     in. The compose recipient list below is deliberately sourced from
+     the same six teachers used elsewhere in the app's sample data
+     (grades.html's COURSES) rather than any broader directory — that
+     mirrors the real API's GET /v1/messages/recipients, which is
+     Schoology's own server-computed "who can I currently message" list
+     already filtered by district policy (teacher-only vs. peer-to-peer),
+     per the decision logged 2026-08-24. ---------- */
+  /* Height-capped to whatever .page has left (flex: 1; min-height: 0)
+     instead of growing to match content -- keeps both panels' frames
+     (and their rounded corners) fixed on screen, matching login-style
+     app chrome. Also fixes a real bug this caused before being capped:
+     with the panel stretched taller than a short conversation's natural
+     content and nothing set to grow into the leftover space, that space
+     collected below .msgs-composer instead of the composer sitting
+     flush with the panel's bottom edge. Capping the shell and letting
+     .msgs-bubbles flex-grow (below) fixes both at once. max-height kept
+     so this doesn't balloon on a very tall monitor. */
+  .msgs-shell {
+    display: flex;
+    gap: 14px;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+    max-height: 660px;
+  }
+  .msgs-list-panel {
+    width: 320px;
+    flex-shrink: 0;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .msgs-list-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 14px 10px;
+    flex-shrink: 0;
+  }
+  .msgs-list-head[hidden] { display: none; }
+  .msgs-compose-btn {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .msgs-compose-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; }
+  .msgs-compose-btn:hover { background: var(--accent-dark); }
+  .msgs-compose-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  /* Search bar "morph": .msgs-search-wrap's own width is fixed by the
+     flex header row around it (flex:1) and never changes. What animates
+     is the split INSIDE it — the input is flex:1 so it fills whatever
+     space the clear button isn't using, and the clear button animates
+     its own width from 0 up to full size. The two transitions together
+     read as "the search bar shrinks to make room for an X", but the
+     bar's overall footprint in the header is constant throughout. */
+  .msgs-search-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+  #msgsSearch {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    background: var(--panel-inner);
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--text-dark);
+  }
+  #msgsSearch::placeholder { color: var(--text-faint); }
+  #msgsSearch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .msgs-search-clear {
+    flex: 0 0 auto;
+    width: 0;
+    height: 32px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: width 0.22s ease, opacity 0.16s ease;
+  }
+  .msgs-search-clear.show { width: 30px; opacity: 1; }
+  .msgs-search-clear svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.3; stroke-linecap: round; }
+  .msgs-search-clear:hover { color: var(--text-dark); }
+  .msgs-search-clear:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: 50%; }
+
+  /* Search results — replaces #threadList in the SAME slot (same
+     flex:1/overflow-y:auto box, see .msgs-thread-list) rather than
+     floating a dropdown over it, per Martin's request. Matches on message
+     BODY text (not
+     just conversation name/course), so a search for e.g. "Unit 2" can
+     surface a specific message buried in a thread; picking a row jumps
+     straight to that message (see jumpToMessage). */
+  .msgs-search-results { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 10px; }
+  .msgs-search-results[hidden] { display: none; }
+  /* Categorized results — Messages/Docs/Links/Video/Audio (2026-09-01):
+     the section headers always render, even for a category with zero
+     items, so the panel's shape stays stable as you type rather than
+     sections popping in/out. */
+  .msgs-search-scope { margin: 2px 4px 8px; padding: 7px 10px; background: var(--panel-inner); border-radius: var(--window-radius-sm); font-size: 0.78rem; font-weight: 600; color: var(--text-dark); }
+  .msgs-search-cat { padding: 2px 0 6px; }
+  .msgs-search-cat + .msgs-search-cat { border-top: 1px solid var(--border); }
+  .msgs-search-cat-title { margin: 8px 8px 2px; font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); }
+  .msgs-search-cat-empty { margin: 0 8px 4px; font-size: 0.76rem; color: var(--text-faint); font-weight: 600; }
+  .msgs-file-chip {
+    width: 34px; height: 34px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+  }
+  .msgs-media-chip {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--panel-inner);
+    color: var(--text-muted);
+  }
+  .msgs-media-chip svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .msgs-search-result-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    padding: 8px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+  }
+  .msgs-search-result-row:hover { background: var(--panel-inner); }
+  .msgs-search-result-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) inset; }
+  .msgs-search-result-text { min-width: 0; flex: 1; }
+  /* display:block on both — as plain (inline-by-default) spans, the
+     white-space:nowrap/overflow:hidden/text-overflow:ellipsis below
+     didn't actually truncate anything: ellipsis truncation needs a
+     block (or inline-block) box, since a bare inline span has no width
+     of its own to clip against. Same fix already applied via <div> for
+     the thread-list row's name/subject/preview (see .msgs-thread-row-*
+     above) — this brings the search results panel in line with that so
+     a long message truncates with "…" here too instead of overflowing
+     or wrapping. */
+  .msgs-search-result-name { display: block; font-weight: 700; font-size: 0.8rem; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msgs-search-result-snippet { display: block; font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .msgs-search-result-snippet mark { background: rgba(217,74,43,0.22); color: inherit; border-radius: 3px; padding: 0 1px; }
+  .msgs-filter-wrap { position: relative; flex-shrink: 0; }
+  .msgs-filter-btn {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+  .msgs-filter-btn:hover { background: var(--panel-inner); }
+  .msgs-filter-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .msgs-filter-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; }
+  .msgs-filter-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 120px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .msgs-filter-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-dark);
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .msgs-filter-item:hover { background: var(--panel-inner); }
+  .msgs-filter-item.active { color: var(--accent); }
+
+  /* Right-click context menu on a left-side thread row -- Pin/Unpin +
+     Delete (2026-09-04, per Martin). position:fixed and anchored to the
+     click coordinates in JS (see openRowContextMenu), not to a wrapper
+     element like .profile-menu/.msgs-filter-menu above, since it can
+     open from any row anywhere in the scrollable list. */
+  .msgs-row-context-menu {
+    position: fixed;
+    min-width: 150px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 30;
+  }
+  .msgs-row-context-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 10px;
+    cursor: pointer;
+  }
+  .msgs-row-context-menu-item:hover { background: var(--panel-inner); }
+  .msgs-row-context-menu-item.delete { color: #b6432f; }
+  /* stroke: currentColor (not a hardcoded color) so the icon always
+     matches its button's text color, including the .delete variant above
+     -- avoids the kind of specificity/contrast bug the composer's link
+     styling hit earlier this project (see architecture-decisions.md). */
+  .msgs-row-context-menu-item svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+  /* Scrolls on its own within the fixed-height panel -- .msgs-list-head
+     (the + / search / filter row above it) stays put. */
+  .msgs-thread-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 10px; }
+  .msgs-thread-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border-radius: var(--window-radius-md);
+    cursor: pointer;
+    margin-bottom: 2px;
+  }
+  .msgs-thread-row:hover { background: var(--panel-inner); }
+  .msgs-thread-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) inset; }
+  .msgs-thread-row.active { background: var(--accent); }
+  .msgs-thread-row.active .msgs-thread-row-name,
+  .msgs-thread-row.active .msgs-thread-row-subject,
+  .msgs-thread-row.active .msgs-thread-row-preview,
+  .msgs-thread-row.active .msgs-thread-row-time { color: #fff; }
+  .msgs-thread-row.unread .msgs-thread-row-name { font-weight: 900; }
+  .msgs-thread-row.unread .msgs-thread-row-preview { color: var(--text-dark); font-weight: 600; }
+  .msgs-avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 1rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .msgs-thread-row-text { min-width: 0; flex: 1; }
+  .msgs-thread-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  .msgs-thread-row-name { font-weight: 700; font-size: 0.86rem; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Pin icon shown before a pinned conversation's name (2026-09-04, per
+     Martin). Lives inside .msgs-thread-row-name so it inherits that
+     span's color -- including the "color: #fff" override on .active
+     rows above -- automatically via currentColor, same reasoning as the
+     context-menu icons. */
+  .msgs-pin-icon { display: inline-flex; vertical-align: -2px; margin-right: 3px; }
+  .msgs-pin-icon svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .msgs-thread-row-time { font-size: 0.66rem; font-weight: 700; color: var(--text-faint); flex-shrink: 0; }
+  /* Thread subject — distinguishes multiple separate threads with the
+     same person (2026-09-01), the same way an email subject line does. */
+  .msgs-thread-row-subject { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .msgs-thread-row-preview { font-size: 0.76rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .msgs-unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .msgs-thread-row.active .msgs-unread-dot { background: #fff; }
+  .msgs-empty-hint { font-size: 0.8rem; color: var(--text-faint); text-align: center; padding: 24px 12px; font-weight: 600; }
+
+  .msgs-thread-panel {
+    flex: 1;
+    min-width: 0;
+    background: #fdfdfe;
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .msgs-thread-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    font-weight: 700;
+    font-size: 0.9rem;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+  }
+  .msgs-thread-empty svg { width: 42px; height: 42px; stroke: var(--text-faint); fill: none; stroke-width: 1.6; opacity: 0.55; }
+  .msgs-thread-empty p { margin: 0; max-width: 220px; line-height: 1.4; }
+  .msgs-thread-empty .hint { font-size: 0.76rem; font-weight: 600; opacity: 0.8; }
+
+  .msgs-thread-active { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .msgs-thread-empty[hidden], .msgs-thread-active[hidden] { display: none; }
+  .msgs-thread-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .msgs-back-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    margin-right: 2px;
+    flex-shrink: 0;
+  }
+  .msgs-back-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .msgs-back-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: 50%; }
+  .msgs-thread-avatar { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 0.88rem; position: relative; overflow: hidden; }
+  /* Wraps the avatar + name/course block so it can be swapped out as one
+     unit for .msgs-to-bar below when composing a brand-new message (see
+     the 2026-09-04 comment above .msgs-shell's redesign notes). */
+  .msgs-thread-identity { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  .msgs-thread-identity[hidden] { display: none; }
+  .msgs-thread-head-text { min-width: 0; }
+  .msgs-thread-name { display: block; font-weight: 800; font-size: 0.94rem; color: var(--text-dark); }
+  .msgs-thread-course { display: block; font-size: 0.72rem; font-weight: 700; color: var(--text-faint); }
+
+  /* Subject dropdown under the person's name (2026-09-04, per Martin) --
+     click the subject + chevron to see every subject you've messaged
+     this person under, plus an "All subjects" option that merges them
+     into one timeline (see renderSubjectDropdown/showAllSubjectsFor). */
+  .msgs-thread-subject-row { position: relative; }
+  .msgs-thread-subject-row[hidden] { display: none; }
+  .msgs-thread-subject-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-faint);
+    cursor: pointer;
+    max-width: 100%;
+  }
+  .msgs-thread-subject-trigger:hover,
+  .msgs-thread-subject-trigger[aria-expanded="true"] { color: var(--accent); }
+  .msgs-thread-subject-trigger:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: 4px; }
+  #threadSubjectTriggerLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msgs-thread-subject-chevron { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; transition: transform 0.15s ease; }
+  .msgs-thread-subject-trigger[aria-expanded="true"] .msgs-thread-subject-chevron { transform: rotate(180deg); }
+  .msgs-thread-subject-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    max-width: 280px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 20;
+  }
+  .msgs-thread-subject-menu[hidden] { display: none; }
+  .msgs-thread-subject-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-dark);
+    padding: 8px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .msgs-thread-subject-menu-item:hover { background: var(--panel-inner); }
+  .msgs-thread-subject-menu-item.active { color: var(--accent); }
+  .msgs-thread-subject-menu-item.all-subjects { border-bottom: 1px solid var(--border); border-radius: var(--window-radius-sm) var(--window-radius-sm) 0 0; margin-bottom: 4px; padding-bottom: 10px; }
+
+  /* Divider pill between each person's threads in the merged "All
+     subjects" timeline (see renderMergedBubbles) -- named by subject so
+     it still reads clearly which conversation each group of messages
+     came from, even though they're no longer separated by thread. */
+  .msgs-subject-divider { display: flex; justify-content: center; margin: 14px 0 10px; }
+  .msgs-subject-divider:first-child { margin-top: 2px; }
+  .msgs-subject-divider span { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-faint); background: var(--panel-inner); border-radius: 999px; padding: 4px 12px; }
+
+  /* Composer hint shown in place of a working composer while the merged
+     All Subjects view is open (see setComposerEnabled). */
+  .msgs-composer-hint { padding: 8px 18px 0; margin: 0; font-size: 0.74rem; font-weight: 700; color: var(--text-faint); text-align: center; }
+  .msgs-composer-hint[hidden] { display: none; }
+
+  /* ---------- New Message redesign (2026-09-04, per Martin) — replaces
+     the old separate "swap the whole list panel to a people picker"
+     compose flow. Existing conversations now stay visible in the list at
+     all times ("the people that are alr there stay there"); starting a
+     new message instead pins a "New Message" row at the top of that same
+     list (see the JS render logic) and, on the right, swaps the
+     avatar/name header (.msgs-thread-identity above) for this To bar --
+     a label plus a native <select> listing every person from the
+     Contacts directory (not just current teachers) -- and reveals a
+     required Subject field beneath it (Schoology requires a subject on
+     every new thread). The send box at the bottom is untouched. ---------- */
+  .msgs-to-bar { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+  .msgs-to-bar[hidden] { display: none; }
+  .msgs-to-label { font-size: 0.78rem; font-weight: 800; color: var(--text-muted); flex-shrink: 0; }
+  .msgs-to-search { position: relative; flex: 1; min-width: 0; }
+  .msgs-to-input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 0.84rem;
+    color: var(--text-dark);
+    background: var(--panel-bg);
+  }
+  .msgs-to-input::placeholder { color: var(--text-faint); }
+  .msgs-to-input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-color: var(--accent); }
+  /* Results dropdown for the To search (2026-09-05) -- capped to
+     MAX_TO_RESULTS items in JS so this box has a fixed, predictable
+     height no matter how many people match or how big the district is. */
+  .msgs-to-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 20;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .msgs-to-results[hidden] { display: none; }
+  .msgs-to-result-item {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .msgs-to-result-item:hover,
+  .msgs-to-result-item.highlighted { background: var(--panel-inner); }
+  .msgs-to-result-name { font-weight: 700; font-size: 0.84rem; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msgs-to-result-course { font-size: 0.72rem; font-weight: 600; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msgs-to-no-results { padding: 8px 10px; font-size: 0.82rem; font-weight: 600; color: var(--text-faint); }
+  .msgs-subject-bar { padding: 10px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .msgs-subject-bar[hidden] { display: none; }
+  .msgs-subject-input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font: inherit;
+    font-size: 0.84rem;
+    color: var(--text-dark);
+    background: var(--panel-bg);
+  }
+  .msgs-subject-input::placeholder { color: var(--text-faint); }
+  .msgs-subject-input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-color: var(--accent); }
+  /* The pinned "New Message" row's icon avatar -- a plain "+" instead of
+     a person's initial, since no recipient may be chosen yet. */
+  .msgs-avatar-new { background: var(--accent); }
+  .msgs-avatar-new svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2.4; stroke-linecap: round; }
+
+  /* Scrolls on its own within the fixed-height panel -- .msgs-thread-header
+     (who you're texting) above and .msgs-composer (send box) below both
+     stay put. flex:1/min-height:0 is also what makes it consume any
+     leftover vertical space instead of that space collecting below the
+     composer -- see the .msgs-shell comment above. */
+  .msgs-bubbles { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  /* flex-direction:column so a message that also carries an attachment
+     (see .msgs-bubble-attachment) stacks the attachment chip right below
+     its bubble instead of side-by-side; a row with just a bubble looks
+     identical to before. */
+  .msgs-bubble-row { display: flex; flex-direction: column; gap: 6px; }
+  .msgs-bubble-row.me { align-items: flex-end; }
+  .msgs-bubble-row.them { align-items: flex-start; }
+  .msgs-bubble { max-width: 74%; padding: 9px 13px; border-radius: 16px; font-size: 0.84rem; line-height: 1.42; }
+  .msgs-bubble-row.them .msgs-bubble { background: var(--panel-inner); color: var(--text-dark); border-bottom-left-radius: 4px; }
+  .msgs-bubble-row.me .msgs-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .msgs-bubble-time { display: block; font-size: 0.62rem; font-weight: 700; margin-top: 4px; }
+  .msgs-bubble-row.them .msgs-bubble-time { color: var(--text-faint); }
+  .msgs-bubble-row.me .msgs-bubble-time { color: rgba(255,255,255,0.82); }
+  /* A file/link/video/audio genuinely shared IN this message — renders
+     right under it as its own small chip row, in the same panel style
+     regardless of who sent it (unlike the text bubble, which flips
+     color for "me"), matching how a real messaging app shows an
+     attachment distinctly from the text around it. */
+  .msgs-bubble-attachment { display: flex; align-items: center; gap: 9px; max-width: 74%; padding: 6px 12px 6px 6px; border-radius: 14px; background: var(--panel-inner); }
+  .msgs-bubble-attachment .msgs-file-chip, .msgs-bubble-attachment .msgs-media-chip { width: 28px; height: 28px; font-size: 0.52rem; }
+  .msgs-bubble-attachment .msgs-media-chip svg { width: 13px; height: 13px; }
+  .msgs-bubble-attachment-text { min-width: 0; }
+  .msgs-bubble-attachment-name { display: block; max-width: 170px; font-size: 0.76rem; font-weight: 700; color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Link attachments read as blue + underlined everywhere they appear
+     (2026-09-04, per Martin: "make all other link attachments blue and
+     underlined") -- both the pre-authored sample threads' links and any
+     newly auto-detected one (see extractLinkAttachment() further down)
+     render through the same renderBubbleAttachment(), which adds this
+     modifier class only when a.kind === 'link'. */
+  .msgs-bubble-attachment-name-link { color: var(--accent); text-decoration: underline; }
+  .msgs-bubble-attachment-meta { font-size: 0.66rem; font-weight: 600; color: var(--text-faint); }
+  .msgs-bubble-attachment-time { display: block; font-size: 0.62rem; font-weight: 700; color: var(--text-faint); margin-top: -2px; }
+  @keyframes msgsBubbleFlash {
+    0% { box-shadow: 0 0 0 0 rgba(217,74,43,0); }
+    25% { box-shadow: 0 0 0 4px rgba(217,74,43,0.6); }
+    100% { box-shadow: 0 0 0 0 rgba(217,74,43,0); }
+  }
+  .msgs-bubble-row.flash .msgs-bubble { animation: msgsBubbleFlash 1.4s ease; }
+
+  /* align-items:flex-end (not center) -- per Martin's 2026-09-04 request,
+     an attachment preview now lives INSIDE this box (see
+     .msgs-composer-box below) stacked above the text line, so the box
+     can grow taller than the attach/send buttons beside it. flex-end
+     keeps those buttons pinned to the bottom row instead of drifting to
+     the vertical middle of a taller box, matching where your thumb
+     expects Send to stay as the box grows. */
+  .msgs-composer { display: flex; align-items: flex-end; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+  /* The actual "message box" -- was just the bare <input> before; now a
+     bordered/rounded container so a pending attachment (see
+     .msgs-pending-attachment) can sit inside it, above the text line,
+     as one visually unified box that extends upward to fit both rather
+     than a separate chip floating above the whole composer row. With no
+     attachment it's a single row and the 20px radius on a ~40px-tall
+     box still reads as the original pill. */
+  .msgs-composer-box {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel-bg);
+    overflow: hidden;
+  }
+  .msgs-composer-box:focus-within { box-shadow: 0 0 0 2px var(--accent-ring); border-color: var(--accent); }
+  /* Disabled while viewing the merged "All subjects" timeline (see
+     setComposerEnabled) -- there's no single thread to reply into. */
+  .msgs-composer-box:has(#composerInput:disabled) { background: var(--panel-inner); }
+  #composerInput {
+    border: none;
+    border-radius: 0;
+    padding: 10px 16px;
+    font: inherit;
+    font-size: 0.84rem;
+    color: var(--text-dark);
+    background: none;
+  }
+  #composerInput::placeholder { color: var(--text-faint); }
+  #composerInput:focus-visible { outline: none; }
+  #composerInput:disabled { color: var(--text-faint); cursor: not-allowed; }
+  .msgs-send-btn {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .msgs-send-btn:hover { background: var(--accent-dark); }
+  .msgs-send-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .msgs-send-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .msgs-send-btn:disabled { background: var(--text-faint); cursor: not-allowed; }
+  .msgs-attach-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+  .msgs-attach-btn:disabled:hover { background: none; color: var(--text-muted); }
+  /* Sits between the input and the send button, per Martin's request. */
+  .msgs-attach-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: none;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+  .msgs-attach-btn:hover { background: var(--panel-inner); color: var(--text-dark); }
+  .msgs-attach-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .msgs-attach-btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+  /* Preview of files picked via the attach button, shown inside the
+     message box (.msgs-composer-box) above the text line until sent (or
+     removed individually). Lives inside the same bordered box as the
+     input rather than as its own separate bar floating above the whole
+     composer row; the box is fine extending upward to fit it.
+     2026-09-04 (per Martin, with a Claude-attachment-UI screenshot as
+     reference): now supports more than one pending attachment at once,
+     each shrunk into its own small square tile with an ×-remove button
+     sitting on its top-right corner, wrapping onto more rows as needed
+     rather than one long horizontal chip. Real document preview
+     (thumbnails) is explicitly out of scope per Martin ("will come out
+     in later version") — each tile is just the filename plus its
+     extension badge, same info the old single-chip version showed. */
+  .msgs-pending-attachment {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 10px 0;
+    flex-shrink: 0;
+  }
+  .msgs-pending-attachment[hidden] { display: none; }
+  .msgs-pending-attachment-tile {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    border-radius: 14px;
+    background: var(--panel-inner);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 6px;
+    flex-shrink: 0;
+  }
+  .msgs-pending-attachment-tile-name {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    text-align: center;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+  .msgs-pending-attachment-tile-ext {
+    font-size: 0.56rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: var(--panel-bg);
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+  /* Sits on the tile's top-right corner (half overlapping, half clear
+     of it), matching the reference screenshot's remove-button style. */
+  .msgs-pending-attachment-tile-remove {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--panel-bg);
+    background: var(--text-dark);
+    color: #fff;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .msgs-pending-attachment-tile-remove:hover { background: var(--accent-dark); }
+  .msgs-pending-attachment-tile-remove:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .msgs-pending-attachment-tile-remove svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2.6; stroke-linecap: round; }
+
+  /* Link detection while typing (2026-09-04, per Martin: "when you type
+     a link, make it have the blue color and the underline"). #composerInput
+     is a plain <input> (not contenteditable, to keep this simple and
+     robust rather than reimplementing caret handling), so this colors
+     the WHOLE typed line once it contains something URL-shaped, rather
+     than styling just the matched substring -- a reasonable stand-in for
+     a mock, and exactly matches the common case of a message that's
+     nothing but a pasted link. See the composerInput 'input' listener
+     (toggles this class) and URL_RE / extractLinkAttachment() further
+     down in the script. */
+  /* #composerInput (ID selector, higher specificity) also sets its own
+     color -- this needs the ID repeated here too, or that rule wins and
+     the text never visibly turns blue despite the class being applied. */
+  #composerInput.msgs-composer-link-active { color: var(--accent); text-decoration: underline; }
+
+  /* ---------- Bottom nav — copied verbatim ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+
+  @media (max-width: 720px) {
+    .msgs-list-panel { width: 100%; }
+    .msgs-shell:not(.thread-open) .msgs-thread-panel { display: none; }
+    .msgs-shell.thread-open .msgs-list-panel { display: none; }
+    .msgs-shell.thread-open .msgs-thread-panel { display: flex; }
+    .msgs-back-btn { display: inline-flex; align-items: center; }
+  }
+  @media (max-width: 520px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Messages</h1>
+        <p class="subtitle" id="msgsSubtitle"></p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="msgs-shell" id="msgsShell">
+      <div class="msgs-list-panel">
+        <div class="msgs-list-head" id="listHeadDefault">
+          <button class="msgs-compose-btn" id="composeBtn" type="button" aria-label="New message">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="msgs-search-wrap" id="searchWrap">
+            <input type="search" id="msgsSearch" placeholder="Search" aria-label="Search messages" autocomplete="off">
+            <button class="msgs-search-clear" id="searchClearBtn" type="button" aria-label="Clear search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div class="msgs-filter-wrap">
+            <button class="msgs-filter-btn" id="filterBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Filter messages">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="17" x2="14" y2="17"/></svg>
+            </button>
+            <div class="msgs-filter-menu" id="filterMenu" role="menu" hidden>
+              <button class="msgs-filter-item active" type="button" role="menuitem" data-filter="all">All</button>
+              <button class="msgs-filter-item" type="button" role="menuitem" data-filter="unread">Unread</button>
+              <!-- 2026-09-05, per Martin -- combines every person's separate
+                   subject threads into one row each, reusing the "All
+                   subjects" merged view already built for the per-person
+                   subject dropdown (see showAllSubjectsFor/renderMergedBubbles
+                   above). A standalone filter choice, not a modifier on
+                   All/Unread -- see combinedRows()/combinedRowHtml() below. -->
+              <button class="msgs-filter-item" type="button" role="menuitem" data-filter="combined">Combined</button>
+            </div>
+          </div>
+        </div>
+        <div class="msgs-thread-list" id="threadList"></div>
+        <div class="msgs-search-results" id="searchResults" hidden></div>
+      </div>
+
+      <!-- Right-click menu for a left-side thread row (2026-09-04, per
+           Martin) -- Pin/Unpin + Delete. Never opens for the pinned "New
+           Message" draft row (see the contextmenu listener on threadList
+           further down). -->
+      <div class="msgs-row-context-menu" id="rowContextMenu" role="menu" hidden>
+        <button class="msgs-row-context-menu-item" type="button" role="menuitem" id="rowContextPinBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          <span id="rowContextPinLabel">Pin</span>
+        </button>
+        <button class="msgs-row-context-menu-item delete" type="button" role="menuitem" id="rowContextDeleteBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/><path d="M10 11v6M14 11v6"/></svg>
+          Delete
+        </button>
+      </div>
+
+      <div class="msgs-thread-panel">
+        <div class="msgs-thread-empty" id="threadEmpty">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <p>Select a conversation</p>
+        </div>
+        <div class="msgs-thread-active" id="threadActive" hidden>
+          <div class="msgs-thread-header">
+            <button class="msgs-back-btn" id="threadBackBtn" type="button" aria-label="Back to messages">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="msgs-thread-identity" id="threadIdentity">
+              <span class="msgs-thread-avatar" id="threadAvatar"></span>
+              <div class="msgs-thread-head-text">
+                <span class="msgs-thread-name" id="threadName"></span>
+                <span class="msgs-thread-course" id="threadCourse"></span>
+                <!-- Subject dropdown (2026-09-04, per Martin: "a down
+                     arrow on the subject... a dropdown with every
+                     subject you messaged under and at the top an all
+                     subjects option"). Shown only for a real opened
+                     thread or the merged All Subjects view (see
+                     renderSubjectDropdown/showThread/showAllSubjectsFor)
+                     -- stays hidden during the New Message compose flows,
+                     which use #subjectBar's text input instead since
+                     there's no existing subject to pick from yet. -->
+                <div class="msgs-thread-subject-row" id="threadSubjectRow" hidden>
+                  <button type="button" class="msgs-thread-subject-trigger" id="threadSubjectTrigger" aria-haspopup="menu" aria-expanded="false">
+                    <span id="threadSubjectTriggerLabel"></span>
+                    <svg class="msgs-thread-subject-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                  <div class="msgs-thread-subject-menu" id="threadSubjectMenu" role="menu" hidden></div>
+                </div>
+              </div>
+            </div>
+            <div class="msgs-to-bar" id="toBar" hidden>
+              <label class="msgs-to-label" for="toInput">To</label>
+              <!-- Search-as-you-type recipient picker (2026-09-05, per
+                   Martin: a plain list of every person in the district
+                   doesn't scale -- a real district can have hundreds of
+                   people, so this needs to filter down as you type rather
+                   than dump the whole directory in a dropdown). See
+                   renderToResults()/directoryMatches() below: results are
+                   capped at MAX_TO_RESULTS so the list can never overflow
+                   the page regardless of district size. -->
+              <div class="msgs-to-search" id="toSearchWrap">
+                <input type="text" id="toInput" class="msgs-to-input" placeholder="Type a name…" aria-label="Search for a person to message" autocomplete="off" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-controls="toResults">
+                <div class="msgs-to-results" id="toResults" role="listbox" hidden></div>
+              </div>
+            </div>
+          </div>
+          <div class="msgs-subject-bar" id="subjectBar" hidden>
+            <input type="text" id="subjectInput" class="msgs-subject-input" placeholder="Subject" aria-label="Subject">
+          </div>
+          <div class="msgs-bubbles" id="threadBubbles"></div>
+          <!-- Plain div, not a <form> (changed 2026-09-04, per Martin's
+               report that sending didn't work for him): this page gets
+               opened inside a sandboxed preview iframe in some surfaces,
+               and a sandboxed iframe without the "allow-forms" permission
+               silently blocks real <form> submission at the browser
+               level -- before our JS even runs, so e.preventDefault()
+               never gets the chance to matter. Send now happens off a
+               plain button click + a keydown listener on the input (see
+               sendComposerMessage() in the script), which isn't form
+               submission at all and isn't affected by that restriction. -->
+          <!-- Shown instead of letting the composer just silently do
+               nothing while viewing the merged "All subjects" timeline
+               (2026-09-04, per Martin's subject-dropdown request) -- there's
+               no single thread to append a reply to, so the composer is
+               disabled (see setComposerEnabled) until a specific subject is
+               chosen from the dropdown above. -->
+          <p class="msgs-composer-hint" id="composerHint" hidden>Select a specific subject above to reply.</p>
+          <div class="msgs-composer" id="composerForm">
+            <div class="msgs-composer-box" id="composerBox">
+              <div class="msgs-pending-attachment" id="pendingAttachmentBar" hidden></div>
+              <input type="text" id="composerInput" placeholder="Type a message…" autocomplete="off" aria-label="Type a message">
+            </div>
+            <input type="file" id="attachFileInput" multiple hidden>
+            <button type="button" class="msgs-attach-btn" id="attachBtn" aria-label="Add attachment">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <button type="button" class="msgs-send-btn" id="sendBtn" aria-label="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner">
+      <button class="nav-link" type="button" data-page="home" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="courses" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-page="messages">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Sample data — same six teachers/course colors as grades.html's
+    // COURSES array, duplicated locally per this project's established
+    // cross-page convention (see architecture-decisions.md's
+    // shared-stylesheet note). Two conversations start unread to
+    // demonstrate that state; the rest are already read.
+    // ------------------------------------------------------------------
+    // Teachers a user can message, keyed by id — this is the source both
+    // the New Message people-list and every conversation's identity
+    // (avatar/name/course) read from. Separated from CONVERSATIONS below
+    // per Martin's 2026-09-01 question about supporting multiple separate
+    // message THREADS with the same person (a real Schoology behavior) —
+    // a person and a thread are no longer the same thing: TEACHERS is the
+    // person directory, CONVERSATIONS is a list of threads that each
+    // reference one person by id via `personId`, so the same person can
+    // have any number of threads (see the two Mr. Cho threads below).
+    const TEACHERS = {
+      cho: { name: 'Mr. Cho', course: 'English 10', color: '#6b8f5e' },
+      alvarez: { name: 'Mr. Alvarez', course: 'AP Chemistry', color: '#a67a22' },
+      whitfield: { name: 'Ms. Whitfield', course: 'Algebra II', color: '#5b6ea3' },
+      bennett: { name: 'Mrs. Bennett', course: 'U.S. History', color: '#a15c4f' },
+      ortiz: { name: 'Sra. Ortiz', course: 'Spanish III', color: '#8a6ba1' },
+      reyes: { name: 'Coach Reyes', course: 'PE', color: '#4f8c8a' },
+    };
+
+    // Full district directory — duplicated from contacts.html's own
+    // CONTACTS array (same ids/names/colors for the 6 people also in
+    // TEACHERS above), per this project's established cross-page
+    // sample-data convention. Added 2026-09-04 (per Martin) so the New
+    // Message "To" dropdown can offer every person from Contacts, not
+    // just current teachers -- previously only reachable one at a time
+    // via a deep link from contacts.html itself (see
+    // handleComposeDeepLink further down). Every entry not already a key
+    // in TEACHERS gets folded in right below (using `dept` as that
+    // person's `course` field, same fallback handleComposeDeepLink
+    // already used) so person()/avatarBg()/the To dropdown all keep
+    // reading from the one TEACHERS lookup regardless of where a
+    // recipient came from.
+    const CONTACTS = [
+      { id: 'cho', name: 'Mr. Cho', role: 'Teacher', dept: 'English Department', color: '#6b8f5e' },
+      { id: 'alvarez', name: 'Mr. Alvarez', role: 'Teacher', dept: 'Science Department', color: '#a67a22' },
+      { id: 'whitfield', name: 'Ms. Whitfield', role: 'Teacher', dept: 'Math Department', color: '#5b6ea3' },
+      { id: 'bennett', name: 'Mrs. Bennett', role: 'Teacher', dept: 'Social Studies Department', color: '#a15c4f' },
+      { id: 'ortiz', name: 'Sra. Ortiz', role: 'Teacher', dept: 'World Languages Department', color: '#8a6ba1' },
+      { id: 'reyes', name: 'Coach Reyes', role: 'Teacher', dept: 'Physical Education Department', color: '#4f8c8a' },
+      { id: 'patterson', name: 'Ms. Patterson', role: 'Teacher', dept: 'Science Department', color: '#7a8f4f' },
+      { id: 'delgado', name: 'Mr. Delgado', role: 'Teacher', dept: 'Math Department', color: '#5b7ea3' },
+      { id: 'nakamura-t', name: 'Mrs. Nakamura', role: '', dept: 'English Department', color: '#8f6b7a' },
+      { id: 'simmons', name: 'Dr. Simmons', role: 'Principal', dept: 'Administration', color: '#946b3e' },
+      { id: 'osei', name: 'Mrs. Osei', role: 'Assistant Principal', dept: 'Administration', color: '#6b8f8f' },
+      { id: 'foster', name: 'Ms. Foster', role: 'School Counselor', dept: 'Counseling', color: '#6b7a9c' },
+      { id: 'okafor', name: 'Mr. Okafor', role: '', dept: 'Counseling', color: '#9c6b8a' },
+      { id: 'lindqvist', name: 'Mrs. Lindqvist', role: 'Librarian', dept: 'Media Center', color: '#7a7050' },
+      { id: 'ramirez', name: 'Nurse Ramirez', role: 'School Nurse', dept: 'Health Office', color: '#a15c5c' },
+      { id: 'yusuf', name: 'Mr. Yusuf', role: '', dept: 'Athletics', color: '#4f7a5c' },
+      { id: 'whitmore', name: 'Dr. Whitmore', role: 'Superintendent', dept: 'District Office', color: '#5c5c8a' },
+      { id: 'alvarado', name: 'Ms. Alvarado', role: 'IT Help Desk', dept: 'District Office', color: '#4f7d8f' },
+      { id: 'chen', name: 'Mr. Chen', role: 'Director of Special Education', dept: 'District Office', color: '#8f6b4f' },
+    ];
+    CONTACTS.forEach(c => {
+      if (!TEACHERS[c.id]) TEACHERS[c.id] = { name: c.name, course: c.dept, color: c.color };
+    });
+
+    // Each thread has a `subject` (shown in the thread list/header so two
+    // threads with the same person read as distinct, the same way email
+    // subjects do) and, new this round, `docs`/`links`/`video`/`audio`
+    // arrays alongside `messages` — sample "shared in this thread" content
+    // for the new categorized search panel below (see searchCategories).
+    // Docs/links/video/audio (2026-09-02): each thread's docs/links/video/
+    // audio arrays used to be hand-authored separately from its messages,
+    // which let them drift out of sync with what the messages actually
+    // say — e.g. a "Docs" entry for a file nobody ever sent in the chat,
+    // just a teacher mentioning an assignment that lives in Course
+    // Materials. Per Martin: "Docs" should mean something someone
+    // actually UPLOADED in the conversation, not an assignment merely
+    // mentioned in passing. So these arrays are no longer hand-authored
+    // here at all — they're derived from an `attachment` field on the
+    // specific message that shares that item (see deriveMedia() right
+    // after this array), and that message renders the attachment inline
+    // in the thread view too (see renderBubbleAttachment), so what
+    // search surfaces always matches something visibly shared in that
+    // chat. A message that just references an assignment living
+    // elsewhere (Alvarez's "nice work on the titration lab", Bennett's
+    // "posted in Course Materials") stays plain text with no attachment
+    // — those aren't chat uploads and don't belong in Docs.
+    const CONVERSATIONS = [
+      { id: 'cho-essay', personId: 'cho', subject: 'Essay Extension', unread: true, messages: [
+        { from: 'me', text: "Could I get an extension on the rhetorical analysis essay? I was out sick Tuesday — here's my draft so far.", time: 'Yesterday · 4:12 PM', attachment: { kind: 'doc', name: 'Rhetorical_Analysis_Draft.docx' } },
+        { from: 'them', text: 'Of course — Friday work for you?', time: 'Yesterday · 4:30 PM' },
+        { from: 'me', text: 'That works, thank you so much!', time: 'Yesterday · 4:31 PM' },
+      ] },
+      // Second thread with the SAME teacher (Mr. Cho), on an unrelated
+      // topic — demonstrates that a person can have more than one active
+      // conversation at once, per Martin's question about this.
+      { id: 'cho-bookclub', personId: 'cho', subject: 'After-School Book Club', unread: false, messages: [
+        { from: 'them', text: "Quick heads up — Book Club meets in room 214 today instead of the library. Here's the sign-up sheet if you haven't added your name yet:", time: 'Mon, Aug 24 · 8:10 AM', attachment: { kind: 'link', title: 'Book Club sign-up sheet', url: 'forms.gle/bookclub24' } },
+        { from: 'me', text: 'Got it, see you there!', time: 'Mon, Aug 24 · 8:12 AM' },
+      ] },
+      { id: 'alvarez-unit2', personId: 'alvarez', subject: 'Unit 2 Test Corrections', unread: true, messages: [
+        { from: 'them', text: "Hi! Just a reminder the Unit 2 test corrections are due Friday. Here's the simulation again if you want extra practice:", time: 'Mon, Aug 24 · 9:02 AM', attachment: { kind: 'link', title: 'PhET Titration Simulation', url: 'phet.colorado.edu/titration' } },
+        { from: 'me', text: 'Got it, thank you!', time: 'Mon, Aug 24 · 9:15 AM' },
+        { from: 'them', text: 'Also — nice work on the titration lab, one of the best write-ups this term.', time: 'Yesterday · 3:40 PM' },
+      ] },
+      { id: 'whitfield-quiz6', personId: 'whitfield', subject: 'Quiz 6 Reschedule', unread: false, messages: [
+        { from: 'them', text: "Quiz 6 has been pushed to next Tuesday to give everyone more review time. Here are some practice graphs to use while you wait:", time: 'Yesterday · 11:20 AM', attachment: { kind: 'link', title: 'Desmos — Quiz 6 practice graphs', url: 'desmos.com/calculator/quiz6' } },
+      ] },
+      { id: 'bennett-dbq', personId: 'bennett', subject: 'DBQ Essay Rubric', unread: false, messages: [
+        { from: 'them', text: 'The DBQ essay rubric is posted in Course Materials if you want to look it over before you revise.', time: 'Tue, Aug 25 · 1:10 PM' },
+      ] },
+      { id: 'ortiz-vocab', personId: 'ortiz', subject: 'Vocabulario Exam', unread: false, messages: [
+        { from: 'them', text: '¡Buen trabajo en el examen de vocabulario! Keep it up. Aquí tienes un audio de práctica:', time: 'Mon, Aug 24 · 2:05 PM', attachment: { kind: 'audio', name: 'Pronunciación — Unidad 3', duration: '0:48' } },
+        { from: 'me', text: '¡Gracias, Sra. Ortiz!', time: 'Mon, Aug 24 · 2:40 PM' },
+      ] },
+      { id: 'reyes-fitness', personId: 'reyes', subject: 'Fitness Test Reminder', unread: false, messages: [
+        { from: 'them', text: 'Don’t forget — bring sneakers for the fitness test Thursday. Here’s a quick warm-up to run through beforehand:', time: 'Fri, Aug 21 · 10:00 AM', attachment: { kind: 'video', name: 'Warm-up routine demo', duration: '1:12' } },
+      ] },
+    ];
+
+    // A message carries its attachment(s) as either the older singular
+    // `attachment` field (every hand-authored CONVERSATIONS message
+    // above) or, since 2026-09-04 (per Martin: composer now supports
+    // picking more than one file at once), a plural `attachments` array
+    // (every message sent through the composer — see sendComposerMessage
+    // further down). This normalizes either shape to an array so
+    // everything downstream (deriveMedia, renderBubbles) only has to
+    // handle one case.
+    function attachmentsOf(m) {
+      if (Array.isArray(m.attachments)) return m.attachments;
+      if (m.attachment) return [m.attachment];
+      return [];
+    }
+
+    // Builds each thread's docs/links/video/audio arrays from its
+    // messages' attachment(s) (see attachmentsOf() above and the comment
+    // above CONVERSATIONS) — single source of truth, so search can never
+    // surface something that isn't also visible as an attachment in the
+    // thread itself.
+    function deriveMedia(c) {
+      const docs = [], links = [], video = [], audio = [];
+      c.messages.forEach(m => {
+        attachmentsOf(m).forEach(a => {
+          if (a.kind === 'doc') docs.push({ name: a.name, time: m.time });
+          else if (a.kind === 'link') links.push({ title: a.title, url: a.url, time: m.time });
+          else if (a.kind === 'video') video.push({ name: a.name, duration: a.duration, time: m.time });
+          else if (a.kind === 'audio') audio.push({ name: a.name, duration: a.duration, time: m.time });
+        });
+      });
+      return { docs, links, video, audio };
+    }
+    CONVERSATIONS.forEach(c => Object.assign(c, deriveMedia(c)));
+
+    function person(c) { return TEACHERS[c.personId]; }
+
+    function avatarInitial(name) {
+      const parts = name.trim().split(' ');
+      return parts[parts.length - 1][0].toUpperCase();
+    }
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+
+    // ------------------------------------------------------------------
+    // Live-updating relative timestamps (2026-09-04, per Martin: "update
+    // timestamps every min, also on page reload"). Only messages actually
+    // sent through the composer this session carry a real `sentAt` (epoch
+    // ms, set in sendComposerMessage) — every hand-authored CONVERSATIONS
+    // message above has a fixed historical-looking string instead (e.g.
+    // "Yesterday · 4:12 PM") and is left alone, since those are supposed
+    // to read as fixed points in the past, not drift. For a message that
+    // does have `sentAt`, relativeTime() computes the label fresh, and
+    // any span rendered via timeSpanHtml() carries a `data-sent-at`
+    // attribute so tickRelativeTimes() (below, run once immediately and
+    // then every 60s) can refresh just that span's text in place —
+    // deliberately NOT a full re-render of the thread/bubbles, so a tick
+    // never resets scroll position or disrupts anything else on screen.
+    // ------------------------------------------------------------------
+    function relativeTime(ms) {
+      const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+      if (diffSec < 60) return 'Just now';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? '' : 's'} ago`;
+      const diffHr = Math.floor(diffMin / 60);
+      if (diffHr < 24) return `${diffHr} hour${diffHr === 1 ? '' : 's'} ago`;
+      const diffDay = Math.floor(diffHr / 24);
+      return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+    }
+    function timeSpanHtml(label, sentAt, cls) {
+      return `<span class="${cls}"${sentAt ? ` data-sent-at="${sentAt}"` : ''}>${label}</span>`;
+    }
+    function tickRelativeTimes() {
+      document.querySelectorAll('[data-sent-at]').forEach(el => {
+        el.textContent = relativeTime(Number(el.dataset.sentAt));
+      });
+    }
+    setInterval(tickRelativeTimes, 60000);
+    // Teacher "profile photo" (2026-09-01 follow-up: Martin asked for this
+    // to come from the API/app auth rather than a stock image service). In
+    // the real app this is GET /v1/users/{id}/photo — an endpoint gated
+    // behind the signed-in session, same as every other Messages call this
+    // mock documents (see the CSS comment above .msgs-shell). A static,
+    // backend-less HTML file has no session to authenticate with, so it
+    // can't literally call that endpoint; the earlier version of this page
+    // used a public placeholder-photo service (pravatar.cc) as a stand-in,
+    // but that's an unauthenticated third-party API, not "the app's auth,"
+    // so it's gone. Instead every teacher gets a generated color-gradient
+    // "photo card" with their initial — this is the same fallback avatar
+    // real apps (Google, Outlook, Slack) show before a real photo has
+    // synced, so it's an honest placeholder rather than a fake photo, and
+    // it needs no network call at all (works instantly, even offline).
+    function shadeColor(hex, percent) {
+      const num = parseInt(hex.slice(1), 16);
+      const clamp = v => Math.max(0, Math.min(255, v));
+      const r = clamp((num >> 16) + Math.round(255 * percent));
+      const g = clamp(((num >> 8) & 0xff) + Math.round(255 * percent));
+      const b = clamp((num & 0xff) + Math.round(255 * percent));
+      return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+    }
+    // Takes a person/teacher object ({name, color, ...}), not a thread.
+    function avatarBg(p) {
+      return `linear-gradient(135deg, ${p.color}, ${shadeColor(p.color, -0.26)})`;
+    }
+
+    let activeConvoId = null;
+    // Set while a New Message draft is in progress -- see
+    // startComposeMode()/startNewThreadWith()/resumeComposeMode() below.
+    // { personId, subject }, with personId null until chosen in the To
+    // dropdown. Nothing is added to CONVERSATIONS until the first message
+    // is actually sent, so re-opening New Message never creates empty
+    // duplicate threads.
+    let pendingThread = null;
+    let currentFilter = 'all'; // 'all' | 'unread' | 'combined'
+    let searchQuery = '';
+
+    function convoTextMatches(c, q) {
+      return c.messages.some(m => m.text.toLowerCase().includes(q));
+    }
+
+    function filteredConversations() {
+      const list = CONVERSATIONS.filter(c => {
+        if (currentFilter === 'unread' && !c.unread) return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const p = person(c);
+          const nameMatch = p.name.toLowerCase().includes(q) || p.course.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q);
+          if (!nameMatch && !convoTextMatches(c, q)) return false;
+        }
+        return true;
+      });
+      // Pinned conversations float to the top (2026-09-04, per Martin,
+      // right-click a row > Pin). Array.prototype.sort is stable
+      // (ES2019+), so conversations keep their existing relative order
+      // within each of the two groups -- this never reshuffles anything
+      // beyond promoting pinned rows.
+      return list.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    }
+
+    // "Combined" filter (2026-09-05, per Martin: picking this option from
+    // the filter dropdown next to search should automatically merge every
+    // person's separate subject threads into a single row, rather than
+    // listing each subject as its own row). One row per person instead of
+    // one row per thread -- reuses the exact same merged "All subjects"
+    // timeline already built for the per-person subject dropdown
+    // (showAllSubjectsFor/renderMergedBubbles), just reached from the
+    // thread list directly instead of via that dropdown.
+    //
+    // "Most recent" thread per person: this app's sample data has no
+    // reliable global timestamp to sort by (older messages only have a
+    // display string like "Yesterday · 4:12 PM", not a real Date) -- so,
+    // matching how filteredConversations() above already treats
+    // CONVERSATIONS' existing array order as newest-first (new threads are
+    // unshift()'d onto the front in sendComposerMessage()), this just
+    // takes each person's FIRST-encountered thread in that same order as
+    // their "most recent" for the row's time/preview text.
+    function combinedRows() {
+      const byPerson = new Map();
+      for (const c of CONVERSATIONS) {
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const p = person(c);
+          const nameMatch = p.name.toLowerCase().includes(q) || p.course.toLowerCase().includes(q) || c.subject.toLowerCase().includes(q);
+          if (!nameMatch && !convoTextMatches(c, q)) continue;
+        }
+        if (!byPerson.has(c.personId)) byPerson.set(c.personId, []);
+        byPerson.get(c.personId).push(c);
+      }
+      const rows = [...byPerson.entries()].map(([personId, threads]) => ({
+        personId,
+        threads,
+        primary: threads[0],
+        unread: threads.some(t => t.unread),
+        pinned: threads.some(t => t.pinned),
+      }));
+      // Same pinned-floats-to-top rule as filteredConversations() -- if
+      // any of a person's threads is pinned, their combined row is too.
+      return rows.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    }
+
+    function combinedRowHtml(row) {
+      const p = person(row.primary);
+      const last = row.primary.messages[row.primary.messages.length - 1];
+      const lastTimeLabel = last.sentAt ? relativeTime(last.sentAt) : last.time.split(' · ')[0];
+      const isMulti = row.threads.length > 1;
+      // A person with only one thread shows their real subject, same as a
+      // normal row -- only an actual merge gets the "N conversations"
+      // summary line, since no single subject applies once there's more
+      // than one.
+      const subjectLine = isMulti ? `${row.threads.length} conversations` : row.primary.subject;
+      const isActive = row.threads.some(t => t.id === activeConvoId) || viewingAllSubjectsFor === row.personId;
+      return `
+        <div class="msgs-thread-row ${row.unread ? 'unread' : ''} ${isActive ? 'active' : ''}" data-id="${row.primary.id}" data-person-id="${row.personId}" data-combined="${isMulti ? '1' : '0'}" tabindex="0" role="button" aria-label="Open conversation with ${escapeHtml(p.name)}${row.pinned ? ' (pinned)' : ''}${isMulti ? `, ${row.threads.length} combined conversations` : ''}">
+          <span class="msgs-avatar" style="background:${avatarBg(p)}">${avatarInitial(p.name)}</span>
+          <div class="msgs-thread-row-text">
+            <div class="msgs-thread-row-top">
+              <span class="msgs-thread-row-name">${row.pinned ? `<span class="msgs-pin-icon" aria-hidden="true">${ICON_PIN}</span>` : ''}${escapeHtml(p.name)}</span>
+              ${timeSpanHtml(lastTimeLabel, last.sentAt, 'msgs-thread-row-time')}
+            </div>
+            <div class="msgs-thread-row-subject">${escapeHtml(subjectLine)}</div>
+            <div class="msgs-thread-row-preview">${last.from === 'me' ? 'You: ' : ''}${escapeHtml(last.text)}</div>
+          </div>
+          ${row.unread ? '<span class="msgs-unread-dot" aria-hidden="true"></span>' : ''}
+        </div>
+      `;
+    }
+
+    function updateSubtitle() {
+      const n = CONVERSATIONS.filter(c => c.unread).length;
+      document.getElementById('msgsSubtitle').textContent = n > 0 ? `${n} unread` : 'All caught up';
+    }
+
+    const threadList = document.getElementById('threadList');
+    // The pinned "New Message" draft row (2026-09-04, per Martin: "the
+    // people that are alr there stay there, make a New Message line...
+    // name it New Message"). Rendered at the top of the SAME thread list
+    // -- existing conversations are never hidden or swapped out for a
+    // separate picker anymore -- whenever a compose draft is in
+    // progress (pendingThread set, see startComposeMode/
+    // startNewThreadWith/resumeComposeMode below). Formatted like a
+    // normal thread row (avatar + name line + optional subject line) so
+    // it reads as one of the list, just with "New Message" standing in
+    // for a person's name and a generic "+" avatar since no recipient
+    // may be chosen yet.
+    function newMessageRowHtml() {
+      if (!pendingThread) return '';
+      return `
+        <div class="msgs-thread-row active new-message" data-id="__new__" tabindex="0" role="button" aria-label="New Message draft">
+          <span class="msgs-avatar msgs-avatar-new" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+          <div class="msgs-thread-row-text">
+            <div class="msgs-thread-row-top">
+              <span class="msgs-thread-row-name">New Message</span>
+            </div>
+            ${pendingThread.subject ? `<div class="msgs-thread-row-subject">${escapeHtml(pendingThread.subject)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+    function renderThreadList() {
+      // "Combined" (2026-09-05, per Martin) takes a completely different
+      // shape -- one row per person instead of one row per thread -- so it
+      // gets its own render path via combinedRows()/combinedRowHtml()
+      // rather than being squeezed into the per-thread list below.
+      if (currentFilter === 'combined') {
+        const rows = combinedRows();
+        const body = rows.length ? rows.map(combinedRowHtml).join('') : (pendingThread ? '' : `<p class="msgs-empty-hint">No conversations match.</p>`);
+        threadList.innerHTML = newMessageRowHtml() + body;
+        updateSubtitle();
+        return;
+      }
+      const list = filteredConversations();
+      const body = list.length ? list.map(c => {
+        const p = person(c);
+        const last = c.messages[c.messages.length - 1];
+        const lastTimeLabel = last.sentAt ? relativeTime(last.sentAt) : last.time.split(' · ')[0];
+        return `
+          <div class="msgs-thread-row ${c.unread ? 'unread' : ''} ${c.id === activeConvoId ? 'active' : ''}" data-id="${c.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(c.subject)} with ${escapeHtml(p.name)}${c.pinned ? ' (pinned)' : ''}">
+            <span class="msgs-avatar" style="background:${avatarBg(p)}">${avatarInitial(p.name)}</span>
+            <div class="msgs-thread-row-text">
+              <div class="msgs-thread-row-top">
+                <span class="msgs-thread-row-name">${c.pinned ? `<span class="msgs-pin-icon" aria-hidden="true">${ICON_PIN}</span>` : ''}${escapeHtml(p.name)}</span>
+                ${timeSpanHtml(lastTimeLabel, last.sentAt, 'msgs-thread-row-time')}
+              </div>
+              <div class="msgs-thread-row-subject">${escapeHtml(c.subject)}</div>
+              <div class="msgs-thread-row-preview">${last.from === 'me' ? 'You: ' : ''}${escapeHtml(last.text)}</div>
+            </div>
+            ${c.unread ? '<span class="msgs-unread-dot" aria-hidden="true"></span>' : ''}
+          </div>
+        `;
+      }).join('') : (pendingThread ? '' : `<p class="msgs-empty-hint">No conversations match.</p>`);
+      threadList.innerHTML = newMessageRowHtml() + body;
+      updateSubtitle();
+    }
+
+    const threadEmpty = document.getElementById('threadEmpty');
+    const threadActive = document.getElementById('threadActive');
+    const threadIdentity = document.getElementById('threadIdentity');
+    const threadAvatar = document.getElementById('threadAvatar');
+    const threadName = document.getElementById('threadName');
+    const threadCourse = document.getElementById('threadCourse');
+    const threadSubjectRow = document.getElementById('threadSubjectRow');
+    const threadSubjectTrigger = document.getElementById('threadSubjectTrigger');
+    const threadSubjectTriggerLabel = document.getElementById('threadSubjectTriggerLabel');
+    const threadSubjectMenu = document.getElementById('threadSubjectMenu');
+    const composerHint = document.getElementById('composerHint');
+    const sendBtn = document.getElementById('sendBtn');
+    // Set only while the merged "All subjects" view is open (see
+    // showAllSubjectsFor) -- the personId being viewed, so the subject
+    // dropdown can tell it apart from a single real thread (activeConvoId).
+    let viewingAllSubjectsFor = null;
+    const toBar = document.getElementById('toBar');
+    const toInput = document.getElementById('toInput');
+    const toResults = document.getElementById('toResults');
+    const subjectBar = document.getElementById('subjectBar');
+    const subjectInput = document.getElementById('subjectInput');
+    const threadBubbles = document.getElementById('threadBubbles');
+    const composerForm = document.getElementById('composerForm');
+    const composerInput = document.getElementById('composerInput');
+    const msgsShell = document.getElementById('msgsShell');
+
+    // ------------------------------------------------------------------
+    // Attach button (2026-09-02, per Martin) — sits next to Send in the
+    // composer. Opens the OS file picker (a native <input type="file">
+    // is the standard, reliable way to do this — unlike the native
+    // color picker swapped out elsewhere in the app, there's no
+    // cross-browser inconsistency to work around here); picked files are
+    // held in `pendingAttachments` and previewed above the composer
+    // until the message is actually sent (or a tile's × is clicked), at
+    // which point they're attached to that message the same way a
+    // message with real shared files works everywhere else (see
+    // `attachments`/`attachment` on CONVERSATIONS messages,
+    // attachmentsOf(), and renderBubbleAttachment) — so an attachment
+    // sent this way shows up in the thread and in search's Docs category
+    // exactly like the pre-authored ones do. Only each file's name is
+    // used (this is a front-end mock with nowhere to actually upload a
+    // file to); size/type aren't read.
+    // 2026-09-04 (per Martin, with a Claude-attachment-UI screenshot as
+    // reference): the file input now accepts multiple files at once
+    // (`multiple` attribute), and `pendingAttachments` is an array
+    // instead of a single object — each entry renders as its own small
+    // square tile with its own remove button (see the CSS above), rather
+    // than one attachment replacing the last. Real document preview
+    // (thumbnails) is intentionally not implemented per Martin ("will
+    // come out in later version") — each tile is just filename + a small
+    // extension badge.
+    // ------------------------------------------------------------------
+    const attachBtn = document.getElementById('attachBtn');
+    const attachFileInput = document.getElementById('attachFileInput');
+    const pendingAttachmentBar = document.getElementById('pendingAttachmentBar');
+    let pendingAttachments = [];
+
+    function renderPendingAttachments() {
+      if (!pendingAttachments.length) {
+        pendingAttachmentBar.hidden = true;
+        pendingAttachmentBar.innerHTML = '';
+        return;
+      }
+      pendingAttachmentBar.innerHTML = pendingAttachments.map((att, i) => {
+        const ext = fileExt(att.name);
+        return `
+          <div class="msgs-pending-attachment-tile">
+            <span class="msgs-pending-attachment-tile-name">${escapeHtml(att.name)}</span>
+            <span class="msgs-pending-attachment-tile-ext">${ext}</span>
+            <button type="button" class="msgs-pending-attachment-tile-remove" aria-label="Remove ${escapeHtml(att.name)}" data-index="${i}">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+        `;
+      }).join('');
+      pendingAttachmentBar.hidden = false;
+    }
+    // Delegated (not per-tile) since tiles are rebuilt on every add/remove.
+    pendingAttachmentBar.addEventListener('click', e => {
+      const btn = e.target.closest('.msgs-pending-attachment-tile-remove');
+      if (!btn) return;
+      pendingAttachments.splice(Number(btn.dataset.index), 1);
+      renderPendingAttachments();
+    });
+    attachBtn.addEventListener('click', () => attachFileInput.click());
+    attachFileInput.addEventListener('change', () => {
+      const files = Array.from(attachFileInput.files);
+      attachFileInput.value = ''; // so picking the same file(s) again still fires "change"
+      if (!files.length) return;
+      files.forEach(file => pendingAttachments.push({ kind: 'doc', name: file.name }));
+      renderPendingAttachments();
+    });
+
+    // Renders the small attachment chip under a message that carries one
+    // (see attachmentsOf() above and the `attachment`/`attachments`
+    // fields on CONVERSATIONS messages) — reuses the same file/media
+    // chip look the search panel uses (fileExt/fileExtColor/ICON_* are
+    // defined further down but already initialized by the time any
+    // message actually renders). A message with several attachments
+    // (2026-09-04) renders one of these chips per attachment, stacked.
+    // standaloneLabel/standaloneSentAt: passed only for the LAST
+    // attachment of a message that has no text bubble (attachment(s)
+    // sent with an empty message box, via the composer's attach button)
+    // — the timestamp that would normally sit inside the bubble is shown
+    // as its own small caption under that last chip instead, so it isn't
+    // lost, and isn't repeated under every chip when there are several.
+    function renderBubbleAttachment(a, standaloneLabel, standaloneSentAt) {
+      if (!a) return '';
+      let chip;
+      if (a.kind === 'doc') {
+        const ext = fileExt(a.name);
+        chip = `<span class="msgs-file-chip" style="background:${fileExtColor(ext)}" aria-hidden="true">${ext}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name">${escapeHtml(a.name)}</span></span>`;
+      } else if (a.kind === 'link') {
+        chip = `<span class="msgs-media-chip" aria-hidden="true">${ICON_LINK}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name msgs-bubble-attachment-name-link">${escapeHtml(a.title)}</span></span>`;
+      } else if (a.kind === 'video' || a.kind === 'audio') {
+        chip = `<span class="msgs-media-chip" aria-hidden="true">${a.kind === 'video' ? ICON_VIDEO : ICON_AUDIO}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name">${escapeHtml(a.name)}</span><span class="msgs-bubble-attachment-meta">${a.duration}</span></span>`;
+      } else {
+        return '';
+      }
+      const timeHtml = standaloneLabel ? timeSpanHtml(standaloneLabel, standaloneSentAt, 'msgs-bubble-attachment-time') : '';
+      return `<div class="msgs-bubble-attachment">${chip}</div>${timeHtml}`;
+    }
+
+    // One message's markup -- shared by the normal single-thread view
+    // (renderBubbles) and the merged "All subjects" timeline
+    // (renderMergedBubbles below), so both stay in sync automatically.
+    function renderBubbleRowHtml(m, i) {
+      const atts = attachmentsOf(m);
+      const timeLabel = m.sentAt ? relativeTime(m.sentAt) : m.time;
+      const bubbleHtml = m.text ? `<div class="msgs-bubble">${escapeHtml(m.text)}${timeSpanHtml(timeLabel, m.sentAt, 'msgs-bubble-time')}</div>` : '';
+      const attsHtml = atts.map((a, ai) => {
+        const isLast = ai === atts.length - 1;
+        return renderBubbleAttachment(a, (!m.text && isLast) ? timeLabel : '', (!m.text && isLast) ? m.sentAt : undefined);
+      }).join('');
+      return `
+        <div class="msgs-bubble-row ${m.from}" data-msg-index="${i}">
+          ${bubbleHtml}
+          ${attsHtml}
+        </div>
+      `;
+    }
+
+    function renderBubbles(c) {
+      threadBubbles.innerHTML = c.messages.map((m, i) => renderBubbleRowHtml(m, i)).join('');
+      threadBubbles.scrollTop = threadBubbles.scrollHeight;
+    }
+
+    // Merged "All subjects" timeline (2026-09-04, per Martin: the top
+    // option in the subject dropdown) -- every thread with one person,
+    // concatenated in CONVERSATIONS order, each group of messages headed
+    // by a small pill naming its subject (see .msgs-subject-divider) so
+    // it still reads clearly which conversation each message came from
+    // even though they're shown together. Read-only: see
+    // setComposerEnabled, called by showAllSubjectsFor right after this.
+    function renderMergedBubbles(threads) {
+      threadBubbles.innerHTML = threads.map(c => `
+        <div class="msgs-subject-divider"><span>${escapeHtml(c.subject)}</span></div>
+        ${c.messages.map((m, i) => renderBubbleRowHtml(m, i)).join('')}
+      `).join('');
+      threadBubbles.scrollTop = threadBubbles.scrollHeight;
+    }
+
+    // Shows a REAL (already-existing-or-just-created) conversation --
+    // restores the normal avatar/name header, in case a compose draft's
+    // To bar/Subject bar were showing instead (see startComposeMode/
+    // startNewThreadWith/resumeComposeMode below).
+    function showThread(c) {
+      const p = person(c);
+      threadEmpty.hidden = true;
+      threadActive.hidden = false;
+      toBar.hidden = true;
+      subjectBar.hidden = true;
+      threadIdentity.hidden = false;
+      threadAvatar.textContent = avatarInitial(p.name);
+      threadAvatar.style.background = avatarBg(p);
+      threadName.textContent = p.name;
+      threadCourse.textContent = p.course;
+      viewingAllSubjectsFor = null;
+      renderSubjectDropdown(c.personId, c.id);
+      setComposerEnabled(true);
+      renderBubbles(c);
+    }
+
+    // ------------------------------------------------------------------
+    // Subject dropdown + "All subjects" merged view (2026-09-04, per
+    // Martin: "under the persons name... a down arrow on the subject...
+    // when clicked... every subject you messaged under and at the top an
+    // all subjects option"). Lives entirely alongside showThread/
+    // openConversation above -- threadsForPerson/renderSubjectDropdown
+    // run every time a real thread opens, and showAllSubjectsFor is the
+    // merged view's own entry point, parallel to showThread.
+    // ------------------------------------------------------------------
+    function threadsForPerson(personId) {
+      return CONVERSATIONS.filter(c => c.personId === personId);
+    }
+
+    // activeThreadId: the currently-open thread's id, or null when the
+    // merged "All subjects" view is what's open.
+    function renderSubjectDropdown(personId, activeThreadId) {
+      const threads = threadsForPerson(personId);
+      threadSubjectTriggerLabel.textContent = activeThreadId === null
+        ? 'All subjects'
+        : (threads.find(t => t.id === activeThreadId) || {}).subject || '';
+      threadSubjectMenu.innerHTML = `
+        <button type="button" class="msgs-thread-subject-menu-item all-subjects ${activeThreadId === null ? 'active' : ''}" role="menuitem" data-thread-id="__all__">All subjects</button>
+        ${threads.map(t => `<button type="button" class="msgs-thread-subject-menu-item ${t.id === activeThreadId ? 'active' : ''}" role="menuitem" data-thread-id="${t.id}">${escapeHtml(t.subject)}</button>`).join('')}
+      `;
+      threadSubjectMenu.dataset.personId = personId;
+      threadSubjectRow.hidden = false;
+    }
+
+    function closeSubjectMenu() {
+      threadSubjectMenu.hidden = true;
+      threadSubjectTrigger.setAttribute('aria-expanded', 'false');
+    }
+
+    // Disables the composer while the merged "All subjects" view is open
+    // -- there's no single thread to append a reply to (sendComposerMessage
+    // already no-ops with activeConvoId left null, this just makes that
+    // visible instead of the composer silently doing nothing).
+    function setComposerEnabled(enabled) {
+      composerInput.disabled = !enabled;
+      attachBtn.disabled = !enabled;
+      sendBtn.disabled = !enabled;
+      composerHint.hidden = enabled;
+    }
+
+    function showAllSubjectsFor(personId) {
+      const p = TEACHERS[personId];
+      const threads = threadsForPerson(personId);
+      if (!p || !threads.length) return;
+      pendingThread = null;
+      activeConvoId = null;
+      viewingAllSubjectsFor = personId;
+      threads.forEach(t => { if (t.unread) t.unread = false; });
+      threadEmpty.hidden = true;
+      threadActive.hidden = false;
+      toBar.hidden = true;
+      subjectBar.hidden = true;
+      threadIdentity.hidden = false;
+      threadAvatar.textContent = avatarInitial(p.name);
+      threadAvatar.style.background = avatarBg(p);
+      threadName.textContent = p.name;
+      threadCourse.textContent = p.course;
+      renderSubjectDropdown(personId, null);
+      renderMergedBubbles(threads);
+      setComposerEnabled(false);
+      renderThreadList();
+      msgsShell.classList.add('thread-open');
+    }
+
+    threadSubjectTrigger.addEventListener('click', () => {
+      const opening = threadSubjectMenu.hidden;
+      if (opening) {
+        threadSubjectMenu.hidden = false;
+        threadSubjectTrigger.setAttribute('aria-expanded', 'true');
+      } else {
+        closeSubjectMenu();
+      }
+    });
+    threadSubjectMenu.addEventListener('click', e => {
+      const item = e.target.closest('.msgs-thread-subject-menu-item');
+      if (!item) return;
+      closeSubjectMenu();
+      const threadId = item.dataset.threadId;
+      if (threadId === '__all__') showAllSubjectsFor(threadSubjectMenu.dataset.personId);
+      else openConversation(threadId);
+    });
+    document.addEventListener('click', e => {
+      if (!threadSubjectMenu.hidden && !e.target.closest('.msgs-thread-subject-row')) closeSubjectMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !threadSubjectMenu.hidden) { closeSubjectMenu(); threadSubjectTrigger.focus(); }
+    });
+
+    function openConversation(id) {
+      const c = CONVERSATIONS.find(x => x.id === id);
+      if (!c) return;
+      pendingThread = null;
+      activeConvoId = id;
+      if (c.unread) c.unread = false;
+      showThread(c);
+      renderThreadList();
+      msgsShell.classList.add('thread-open');
+      composerInput.value = '';
+    }
+
+    // ------------------------------------------------------------------
+    // New Message redesign (2026-09-04, per Martin) — replaces the old
+    // single startNewThread(personId), which required a person to
+    // already be chosen (from a separate people-picker panel) before the
+    // thread panel would even open. Three entry points now:
+    //
+    //  - startComposeMode(): the "+" button. No recipient yet -- opens
+    //    with the To dropdown empty, for the user to pick from (see
+    //    populateToSelect()).
+    //  - startNewThreadWith(personId): a specific person already known
+    //    up front (currently only the Contacts deep-link -- see
+    //    handleComposeDeepLink further down). Skips the To dropdown
+    //    entirely and shows their identity normally, since asking the
+    //    user to re-pick someone they just clicked "Message" on would be
+    //    redundant. Still shows the required Subject field.
+    //  - resumeComposeMode(): re-opens the thread panel on an
+    //    already-in-progress draft (pendingThread already set) without
+    //    resetting anything -- used when the pinned "New Message" row
+    //    (see newMessageRowHtml()) is clicked again, e.g. after using the
+    //    mobile back button.
+    //
+    // None of these add anything to CONVERSATIONS -- that only happens
+    // once the composer is actually submitted (see sendComposerMessage()).
+    // ------------------------------------------------------------------
+    // Search-as-you-type replacement for the old "every person in the
+    // district in one dropdown" picker (2026-09-05, per Martin: a real
+    // district's directory can run into the hundreds of people, so
+    // dumping the whole thing into one list doesn't scale and risks
+    // overflowing the page). Matches anywhere in the name, case-
+    // insensitive, and is capped to MAX_TO_RESULTS so the results box has
+    // a fixed, predictable size no matter how many people match or how
+    // big the district is.
+    const MAX_TO_RESULTS = 6;
+
+    function directoryMatches(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) return [];
+      return Object.entries(TEACHERS)
+        .filter(([, p]) => p.name.toLowerCase().includes(q))
+        .sort((a, b) => a[1].name.localeCompare(b[1].name))
+        .slice(0, MAX_TO_RESULTS);
+    }
+
+    let toHighlightIndex = -1;
+
+    function closeToResults() {
+      toResults.hidden = true;
+      toResults.innerHTML = '';
+      toHighlightIndex = -1;
+      toInput.setAttribute('aria-expanded', 'false');
+    }
+
+    function renderToResults(query) {
+      if (!query.trim()) { closeToResults(); return; }
+      const matches = directoryMatches(query);
+      toHighlightIndex = matches.length ? 0 : -1;
+      toResults.innerHTML = matches.length
+        ? matches.map(([id, p], i) => `
+            <button type="button" class="msgs-to-result-item${i === 0 ? ' highlighted' : ''}" role="option" data-id="${id}">
+              <span class="msgs-to-result-name">${escapeHtml(p.name)}</span>
+              ${p.course ? `<span class="msgs-to-result-course">${escapeHtml(p.course)}</span>` : ''}
+            </button>
+          `).join('')
+        : `<p class="msgs-to-no-results">No one in the district matches "${escapeHtml(query.trim())}".</p>`;
+      toResults.hidden = false;
+      toInput.setAttribute('aria-expanded', 'true');
+    }
+
+    function selectToPerson(id) {
+      const p = TEACHERS[id];
+      if (!p || !pendingThread) return;
+      pendingThread.personId = id;
+      toInput.value = p.name;
+      closeToResults();
+      threadBubbles.innerHTML = draftBubblesPlaceholder();
+    }
+
+    function draftBubblesPlaceholder() {
+      const p = pendingThread && pendingThread.personId ? TEACHERS[pendingThread.personId] : null;
+      return p
+        ? `<p class="msgs-empty-hint">Start a new conversation with ${escapeHtml(p.name)}.</p>`
+        : `<p class="msgs-empty-hint">Choose who to message, then start typing below.</p>`;
+    }
+
+    function startComposeMode() {
+      activeConvoId = null;
+      viewingAllSubjectsFor = null;
+      pendingThread = { personId: null, subject: '' };
+      threadEmpty.hidden = true;
+      threadActive.hidden = false;
+      threadIdentity.hidden = true;
+      threadSubjectRow.hidden = true; // no existing subject to pick from yet -- see #subjectBar below instead
+      closeSubjectMenu();
+      setComposerEnabled(true);
+      toBar.hidden = false;
+      subjectBar.hidden = false;
+      toInput.value = '';
+      closeToResults();
+      subjectInput.value = '';
+      threadBubbles.innerHTML = draftBubblesPlaceholder();
+      renderThreadList();
+      msgsShell.classList.add('thread-open');
+      composerInput.value = '';
+      toInput.focus();
+    }
+
+    function startNewThreadWith(personId) {
+      const p = TEACHERS[personId];
+      if (!p) return;
+      activeConvoId = null;
+      viewingAllSubjectsFor = null;
+      pendingThread = { personId, subject: '' };
+      threadEmpty.hidden = true;
+      threadActive.hidden = false;
+      toBar.hidden = true;
+      subjectBar.hidden = false;
+      subjectInput.value = '';
+      threadIdentity.hidden = false;
+      threadSubjectRow.hidden = true; // no existing subject to pick from yet -- see #subjectBar below instead
+      closeSubjectMenu();
+      setComposerEnabled(true);
+      threadAvatar.textContent = avatarInitial(p.name);
+      threadAvatar.style.background = avatarBg(p);
+      threadName.textContent = p.name;
+      threadCourse.textContent = `${p.course} · New message`;
+      threadBubbles.innerHTML = draftBubblesPlaceholder();
+      renderThreadList();
+      msgsShell.classList.add('thread-open');
+      composerInput.value = '';
+      composerInput.focus();
+    }
+
+    function resumeComposeMode() {
+      if (!pendingThread) return;
+      activeConvoId = null;
+      viewingAllSubjectsFor = null;
+      threadEmpty.hidden = true;
+      threadActive.hidden = false;
+      threadIdentity.hidden = true;
+      threadSubjectRow.hidden = true;
+      closeSubjectMenu();
+      setComposerEnabled(true);
+      toBar.hidden = false;
+      subjectBar.hidden = false;
+      toInput.value = pendingThread.personId ? TEACHERS[pendingThread.personId].name : '';
+      closeToResults();
+      subjectInput.value = pendingThread.subject || '';
+      threadBubbles.innerHTML = draftBubblesPlaceholder();
+      renderThreadList();
+      msgsShell.classList.add('thread-open');
+    }
+    toInput.addEventListener('input', () => {
+      if (!pendingThread) return;
+      // Typing invalidates whatever was previously selected -- you can't
+      // stay "sending to" someone whose name you've since edited away.
+      pendingThread.personId = null;
+      renderToResults(toInput.value);
+    });
+    toInput.addEventListener('focus', () => {
+      if (toInput.value.trim() && !pendingThread?.personId) renderToResults(toInput.value);
+    });
+    toInput.addEventListener('keydown', e => {
+      if (toResults.hidden) return;
+      const items = Array.from(toResults.querySelectorAll('.msgs-to-result-item'));
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!items.length) return;
+        toHighlightIndex = (toHighlightIndex + 1) % items.length;
+        items.forEach((el, i) => el.classList.toggle('highlighted', i === toHighlightIndex));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!items.length) return;
+        toHighlightIndex = (toHighlightIndex - 1 + items.length) % items.length;
+        items.forEach((el, i) => el.classList.toggle('highlighted', i === toHighlightIndex));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const target = items[toHighlightIndex] || items[0];
+        if (target) selectToPerson(target.dataset.id);
+      } else if (e.key === 'Escape') {
+        closeToResults();
+      }
+    });
+    toResults.addEventListener('click', e => {
+      const item = e.target.closest('.msgs-to-result-item');
+      if (!item) return;
+      selectToPerson(item.dataset.id);
+    });
+    document.addEventListener('click', e => {
+      if (!toResults.hidden && !e.target.closest('#toSearchWrap')) closeToResults();
+    });
+    subjectInput.addEventListener('input', () => {
+      if (pendingThread) pendingThread.subject = subjectInput.value;
+    });
+
+    // Scrolls to and briefly highlights a specific message within a
+    // conversation — used by the search panel so picking a message match
+    // jumps straight to it instead of just opening the thread at the
+    // bottom.
+    function jumpToMessage(id, msgIndex) {
+      openConversation(id);
+      requestAnimationFrame(() => {
+        const row = threadBubbles.querySelector(`[data-msg-index="${msgIndex}"]`);
+        if (!row) return;
+        row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        row.classList.add('flash');
+        setTimeout(() => row.classList.remove('flash'), 1500);
+      });
+    }
+
+    // A "Combined" row (data-combined="1") represents more than one
+    // subject thread with the same person -- opening it means the merged
+    // "All subjects" timeline (showAllSubjectsFor), same as picking "All
+    // subjects" from that person's own subject dropdown. A combined row
+    // for someone with only one thread (data-combined="0", i.e. Combined
+    // mode simply hasn't changed anything for them) still just opens
+    // normally, same as clicking any other row -- routing that case
+    // through showAllSubjectsFor would needlessly disable the composer
+    // for a person who only has one conversation anyway.
+    function openThreadRow(row) {
+      if (row.dataset.id === '__new__') { resumeComposeMode(); return; } // the pinned New Message draft row
+      if (row.dataset.combined === '1') { showAllSubjectsFor(row.dataset.personId); return; }
+      openConversation(row.dataset.id);
+    }
+    threadList.addEventListener('click', e => {
+      const row = e.target.closest('.msgs-thread-row');
+      if (!row) return;
+      openThreadRow(row);
+    });
+    threadList.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('.msgs-thread-row');
+      if (!row) return;
+      e.preventDefault();
+      openThreadRow(row);
+    });
+
+    document.getElementById('threadBackBtn').addEventListener('click', () => {
+      msgsShell.classList.remove('thread-open');
+    });
+
+    // ------------------------------------------------------------------
+    // Pin / Delete context menu (2026-09-04, per Martin: right-click a
+    // conversation in the left-side list -- not the pinned "New Message"
+    // draft row -- add Pin/Unpin and Delete). Follows the same
+    // open/close + outside-click + Escape pattern as #filterMenu and
+    // #profileMenu further down, except this one is position:fixed and
+    // anchored to the click coordinates (it can be triggered from any
+    // row anywhere in the scrollable list, not a fixed wrapper).
+    // ------------------------------------------------------------------
+    const rowContextMenu = document.getElementById('rowContextMenu');
+    const rowContextPinBtn = document.getElementById('rowContextPinBtn');
+    const rowContextPinLabel = document.getElementById('rowContextPinLabel');
+    const rowContextDeleteBtn = document.getElementById('rowContextDeleteBtn');
+    let contextMenuConvoId = null;
+
+    function closeRowContextMenu() {
+      rowContextMenu.hidden = true;
+      contextMenuConvoId = null;
+    }
+
+    function openRowContextMenu(convoId, x, y) {
+      const c = CONVERSATIONS.find(v => v.id === convoId);
+      if (!c) return;
+      contextMenuConvoId = convoId;
+      rowContextPinLabel.textContent = c.pinned ? 'Unpin' : 'Pin';
+      rowContextMenu.hidden = false;
+      // Clamp inside the viewport -- measure only after un-hiding so
+      // offsetWidth/Height reflect the real rendered size.
+      const menuW = rowContextMenu.offsetWidth;
+      const menuH = rowContextMenu.offsetHeight;
+      const maxX = window.innerWidth - menuW - 8;
+      const maxY = window.innerHeight - menuH - 8;
+      rowContextMenu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
+      rowContextMenu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
+    }
+
+    threadList.addEventListener('contextmenu', e => {
+      const row = e.target.closest('.msgs-thread-row');
+      if (!row || row.dataset.id === '__new__') return; // never on the draft row
+      // Skip a genuinely-merged Combined row (more than one subject with
+      // this person) -- Pin/Delete would be ambiguous about which of
+      // their several threads it applies to. A Combined row for someone
+      // with only one thread is unaffected (data-combined="0") and still
+      // gets the normal menu.
+      if (row.dataset.combined === '1') return;
+      e.preventDefault();
+      openRowContextMenu(row.dataset.id, e.clientX, e.clientY);
+    });
+
+    rowContextPinBtn.addEventListener('click', () => {
+      const c = CONVERSATIONS.find(v => v.id === contextMenuConvoId);
+      if (c) c.pinned = !c.pinned;
+      closeRowContextMenu();
+      renderThreadList();
+    });
+
+    rowContextDeleteBtn.addEventListener('click', () => {
+      const id = contextMenuConvoId;
+      closeRowContextMenu();
+      if (!id) return;
+      const idx = CONVERSATIONS.findIndex(v => v.id === id);
+      if (idx === -1) return;
+      CONVERSATIONS.splice(idx, 1);
+      if (activeConvoId === id) {
+        // The deleted conversation was open -- fall back to the empty
+        // state rather than leaving a dangling thread panel open.
+        activeConvoId = null;
+        threadActive.hidden = true;
+        threadEmpty.hidden = false;
+        msgsShell.classList.remove('thread-open');
+      }
+      renderThreadList();
+    });
+
+    document.addEventListener('click', e => {
+      if (!rowContextMenu.hidden && !e.target.closest('#rowContextMenu')) closeRowContextMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !rowContextMenu.hidden) closeRowContextMenu();
+    });
+    // Closes the menu on scroll rather than letting it float disconnected
+    // from the row it was opened on.
+    threadList.addEventListener('scroll', () => { if (!rowContextMenu.hidden) closeRowContextMenu(); });
+
+    // ------------------------------------------------------------------
+    // Link detection (2026-09-04, per Martin: "when you type a link, make
+    // it have the blue color and the underline and when sent turn it
+    // into a link attachment"). #composerInput stays a plain <input>
+    // (see the sandboxed-form comment above sendComposerMessage below)
+    // rather than becoming contenteditable, so this is a light heuristic
+    // rather than per-character styling: URL_RE matches ONE bare-ish URL
+    // (protocol optional, matching how every existing sample link
+    // attachment is already written -- e.g. "phet.colorado.edu/titration",
+    // no "https://"), and while typing, the whole input goes blue +
+    // underlined the moment its value looks like it contains one (see the
+    // 'input' listener right below composerInput's declaration further
+    // down). Only the FIRST match in a message is turned into an
+    // attachment; a message with more than one URL is a rarer case this
+    // mock doesn't handle specially.
+    // ------------------------------------------------------------------
+    const URL_RE = /\b((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?)\b/i;
+    function extractLinkAttachment(text) {
+      const m = text.match(URL_RE);
+      if (!m) return { text, linkAttachment: null };
+      const url = m[0];
+      const remaining = (text.slice(0, m.index) + text.slice(m.index + url.length)).replace(/\s+/g, ' ').trim();
+      return { text: remaining, linkAttachment: { kind: 'link', title: url, url } };
+    }
+    composerInput.addEventListener('input', () => {
+      composerInput.classList.toggle('msgs-composer-link-active', URL_RE.test(composerInput.value));
+    });
+
+    // sendComposerMessage() used to be a <form> "submit" handler. Changed
+    // 2026-09-04 (per Martin: sending "doesn't work" for him) -- he was
+    // viewing the page in a sandboxed preview iframe, and a sandboxed
+    // iframe without "allow-forms" blocks real <form> submission at the
+    // browser level before any JS runs (confirmed via a Playwright repro:
+    // Chrome logs "Blocked form submission... sandboxed and the
+    // 'allow-forms' permission is not set" and the submit event never
+    // fires at all, so e.preventDefault() never got a chance to matter).
+    // The composer markup is a plain <div> now (see the HTML comment
+    // above #composerForm), and this same logic runs off a direct
+    // function call instead -- from the Send button's click listener and
+    // the Enter-key listener on #composerInput just below -- which isn't
+    // form submission and isn't subject to that sandbox restriction.
+    // sentAt (real epoch ms, 2026-09-04 per Martin) drives the live-
+    // updating relative label ("Just now" → "1 min ago" → ...) -- see the
+    // relativeTime()/tickRelativeTimes() comment above escapeHtml(). The
+    // static `time: 'Just now'` string is still set alongside it as a
+    // harmless fallback/label for anything that doesn't know about
+    // sentAt, but every render path here prefers sentAt when present.
+    function sendComposerMessage() {
+      const raw = composerInput.value.trim();
+      const { text, linkAttachment } = extractLinkAttachment(raw);
+      if (!text && pendingAttachments.length === 0 && !linkAttachment) return; // attachment(s)/link alone are a valid send, same as most messaging apps
+      const msg = { from: 'me', text, time: 'Just now', sentAt: Date.now() };
+      const attachments = pendingAttachments.slice();
+      if (linkAttachment) attachments.push(linkAttachment);
+      if (attachments.length) msg.attachments = attachments;
+      if (pendingThread) {
+        // A brand-new thread requires a recipient -- can't be sent until
+        // one's chosen from the To search (see startComposeMode/toInput
+        // above). Subject is required by the real Schoology API too
+        // (per Martin); this mock doesn't hard-block on a blank one, it
+        // just falls back to a generic label, same spirit as every other
+        // non-blocking validation choice in this app.
+        if (!pendingThread.personId) { toInput.focus(); return; }
+        const subject = (pendingThread.subject || '').trim() || 'New conversation';
+        const c = {
+          id: `${pendingThread.personId}-${Date.now()}`,
+          personId: pendingThread.personId,
+          subject,
+          unread: false,
+          messages: [msg],
+        };
+        Object.assign(c, deriveMedia(c));
+        CONVERSATIONS.unshift(c);
+        pendingThread = null;
+        activeConvoId = c.id;
+        composerInput.value = '';
+        composerInput.classList.remove('msgs-composer-link-active');
+        pendingAttachments = [];
+        renderPendingAttachments();
+        showThread(c); // restores the normal avatar/name header now that it's a real thread
+        renderThreadList();
+        return;
+      }
+      if (!activeConvoId) return;
+      const c = CONVERSATIONS.find(x => x.id === activeConvoId);
+      c.messages.push(msg);
+      Object.assign(c, deriveMedia(c)); // refresh docs/links/etc. so new attachment(s) show up in search right away
+      composerInput.value = '';
+      composerInput.classList.remove('msgs-composer-link-active');
+      pendingAttachments = [];
+      renderPendingAttachments();
+      renderBubbles(c);
+      renderThreadList();
+    }
+    sendBtn.addEventListener('click', sendComposerMessage);
+    composerInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); sendComposerMessage(); }
+    });
+
+    // ------------------------------------------------------------------
+    // Search — clicking/focusing the search box opens a categorized panel
+    // (Messages / Docs / Links / Video / Audio, per Martin's 2026-09-01
+    // request) instead of a single flat list. With no query it's a browse
+    // view of recent items in each category; typing filters every category
+    // at once and highlights the matched text, but the category headers
+    // stay put even when a category has zero matches, rather than the
+    // layout jumping around. If the query matches a teacher's name, every
+    // category scopes down to just that person's thread(s) instead of
+    // everyone's — same idea as Spotlight narrowing to one contact.
+    // ------------------------------------------------------------------
+    const msgsSearchInput = document.getElementById('msgsSearch');
+    const searchResults = document.getElementById('searchResults');
+
+    function highlightMatch(text, q) {
+      const idx = text.toLowerCase().indexOf(q.toLowerCase());
+      if (idx === -1) return escapeHtml(text);
+      return escapeHtml(text.slice(0, idx)) + '<mark>' + escapeHtml(text.slice(idx, idx + q.length)) + '</mark>' + escapeHtml(text.slice(idx + q.length));
+    }
+
+    function messageMatches(q) {
+      const results = [];
+      CONVERSATIONS.forEach(c => {
+        c.messages.forEach((m, i) => {
+          if (m.text.toLowerCase().includes(q)) results.push({ c, i, m });
+        });
+      });
+      return results;
+    }
+
+    function allDocs() { return CONVERSATIONS.flatMap(c => c.docs.map(d => ({ ...d, c }))); }
+    function allLinks() { return CONVERSATIONS.flatMap(c => c.links.map(l => ({ ...l, c }))); }
+    function allVideo() { return CONVERSATIONS.flatMap(c => c.video.map(v => ({ ...v, c }))); }
+    function allAudio() { return CONVERSATIONS.flatMap(c => c.audio.map(a => ({ ...a, c }))); }
+
+    function matchedPersonId(q) {
+      if (!q) return null;
+      const hit = Object.entries(TEACHERS).find(([, t]) => t.name.toLowerCase().includes(q));
+      return hit ? hit[0] : null;
+    }
+
+    function searchCategories(qRaw) {
+      const q = qRaw.trim().toLowerCase();
+      const personId = matchedPersonId(q);
+      if (personId) {
+        const scope = CONVERSATIONS.filter(c => c.personId === personId);
+        return {
+          personId, q,
+          messages: scope.flatMap(c => c.messages.map((m, i) => ({ c, i, m }))).slice(-6).reverse(),
+          docs: scope.flatMap(c => c.docs.map(d => ({ ...d, c }))),
+          links: scope.flatMap(c => c.links.map(l => ({ ...l, c }))),
+          video: scope.flatMap(c => c.video.map(v => ({ ...v, c }))),
+          audio: scope.flatMap(c => c.audio.map(a => ({ ...a, c }))),
+        };
+      }
+      if (!q) {
+        return {
+          personId: null, q,
+          messages: CONVERSATIONS.map(c => ({ c, i: c.messages.length - 1, m: c.messages[c.messages.length - 1] })).slice(0, 6),
+          docs: allDocs().slice(0, 4),
+          links: allLinks().slice(0, 4),
+          video: allVideo().slice(0, 4),
+          audio: allAudio().slice(0, 4),
+        };
+      }
+      return {
+        personId: null, q,
+        messages: messageMatches(q),
+        docs: allDocs().filter(d => d.name.toLowerCase().includes(q)),
+        links: allLinks().filter(l => l.title.toLowerCase().includes(q) || l.url.toLowerCase().includes(q)),
+        video: allVideo().filter(v => v.name.toLowerCase().includes(q)),
+        audio: allAudio().filter(a => a.name.toLowerCase().includes(q)),
+      };
+    }
+
+    function fileExt(name) { return name.split('.').pop().toUpperCase(); }
+    function fileExtColor(ext) {
+      if (ext === 'PDF') return '#b23b2e';
+      if (ext === 'DOCX') return '#2f5fa8';
+      if (ext === 'PPTX') return '#c07a1f';
+      return 'var(--accent)';
+    }
+    const ICON_LINK = '<svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1 1"/><path d="M14 11a5 5 0 0 0-7.07 0l-2 2a5 5 0 0 0 7.07 7.07l1-1"/></svg>';
+    const ICON_VIDEO = '<svg viewBox="0 0 24 24"><polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"/></svg>';
+    const ICON_AUDIO = '<svg viewBox="0 0 24 24"><path d="M9 19V6l11-2v13"/><circle cx="6" cy="19" r="3"/><circle cx="17" cy="17" r="3"/></svg>';
+    // Same glyph as #rowContextPinBtn's icon in the markup above -- kept
+    // in sync by hand since this one gets stamped into thread-row HTML
+    // by renderThreadList() while that one is static.
+    const ICON_PIN = '<svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+
+    function renderMsgItem({ c, i, m }, q) {
+      const p = person(c);
+      return `
+        <button class="msgs-search-result-row" type="button" data-kind="message" data-id="${c.id}" data-index="${i}">
+          <span class="msgs-avatar" style="width:32px;height:32px;font-size:0.78rem;background:${avatarBg(p)}">${avatarInitial(p.name)}</span>
+          <span class="msgs-search-result-text">
+            <span class="msgs-search-result-name">${escapeHtml(p.name)}</span>
+            <span class="msgs-search-result-snippet">${m.from === 'me' ? 'You: ' : ''}${q ? highlightMatch(m.text, q) : escapeHtml(m.text)}</span>
+          </span>
+        </button>`;
+    }
+    function renderDocItem(d, q) {
+      const p = person(d.c);
+      const ext = fileExt(d.name);
+      return `
+        <button class="msgs-search-result-row" type="button" data-kind="thread" data-id="${d.c.id}">
+          <span class="msgs-file-chip" style="background:${fileExtColor(ext)}" aria-hidden="true">${ext}</span>
+          <span class="msgs-search-result-text">
+            <span class="msgs-search-result-name">${q ? highlightMatch(d.name, q) : escapeHtml(d.name)}</span>
+            <span class="msgs-search-result-snippet">${escapeHtml(p.name)} · ${escapeHtml(d.time)}</span>
+          </span>
+        </button>`;
+    }
+    function renderLinkItem(l, q) {
+      const p = person(l.c);
+      const host = l.url.split('/')[0];
+      return `
+        <button class="msgs-search-result-row" type="button" data-kind="thread" data-id="${l.c.id}">
+          <span class="msgs-media-chip" aria-hidden="true">${ICON_LINK}</span>
+          <span class="msgs-search-result-text">
+            <span class="msgs-search-result-name">${q ? highlightMatch(l.title, q) : escapeHtml(l.title)}</span>
+            <span class="msgs-search-result-snippet">${escapeHtml(p.name)} · ${escapeHtml(host)}</span>
+          </span>
+        </button>`;
+    }
+    function renderMediaItem(item, q, kind) {
+      const p = person(item.c);
+      return `
+        <button class="msgs-search-result-row" type="button" data-kind="thread" data-id="${item.c.id}">
+          <span class="msgs-media-chip" aria-hidden="true">${kind === 'video' ? ICON_VIDEO : ICON_AUDIO}</span>
+          <span class="msgs-search-result-text">
+            <span class="msgs-search-result-name">${q ? highlightMatch(item.name, q) : escapeHtml(item.name)}</span>
+            <span class="msgs-search-result-snippet">${escapeHtml(p.name)} · ${escapeHtml(item.duration)}</span>
+          </span>
+        </button>`;
+    }
+    function renderCategorySection(title, items, renderItem, q) {
+      const body = items.length
+        ? items.map(renderItem).join('')
+        : `<p class="msgs-search-cat-empty">${q ? 'No matches' : 'Nothing yet'}</p>`;
+      return `<div class="msgs-search-cat"><h4 class="msgs-search-cat-title">${title}</h4>${body}</div>`;
+    }
+
+    function renderSearchResults() {
+      const { personId, q, messages, docs, links, video, audio } = searchCategories(searchQuery);
+      const header = personId
+        ? `<div class="msgs-search-scope">Showing results for <strong>${escapeHtml(TEACHERS[personId].name)}</strong></div>`
+        : '';
+      searchResults.innerHTML = header
+        + renderCategorySection('Messages', messages, item => renderMsgItem(item, q), q)
+        + renderCategorySection('Docs', docs, item => renderDocItem(item, q), q)
+        + renderCategorySection('Links', links, item => renderLinkItem(item, q), q)
+        + renderCategorySection('Video', video, item => renderMediaItem(item, q, 'video'), q)
+        + renderCategorySection('Audio', audio, item => renderMediaItem(item, q, 'audio'), q);
+      searchResults.hidden = false;
+    }
+
+    // ------------------------------------------------------------------
+    // Search mode (2026-09-01 rework): clicking/focusing the search field
+    // no longer opens a dropdown floating over the thread list — it
+    // swaps the categorized results panel in for the thread list, in the
+    // exact same slot (see .msgs-search-results next to #threadList in
+    // the HTML and CSS above). The search bar itself "morphs": the input
+    // is flex:1 inside .msgs-search-wrap, and the clear (X) button next
+    // to it animates its own width from 0 up — so as the X grows in, the
+    // input visibly shrinks to make room for it, while .msgs-search-wrap
+    // itself (sized by the header's flex row) never changes width. The X
+    // doubles as "cancel search": clicking it clears the query and
+    // restores the normal thread list, same as Escape or picking a
+    // result.
+    // ------------------------------------------------------------------
+    const searchWrap = document.getElementById('searchWrap');
+    const searchClearBtn = document.getElementById('searchClearBtn');
+    let searchActive = false;
+
+    function enterSearchMode() {
+      if (searchActive) return;
+      searchActive = true;
+      searchClearBtn.classList.add('show');
+      threadList.hidden = true;
+      renderSearchResults();
+    }
+    function exitSearchMode() {
+      searchActive = false;
+      searchClearBtn.classList.remove('show');
+      searchResults.hidden = true;
+      threadList.hidden = false;
+      searchQuery = '';
+      msgsSearchInput.value = '';
+    }
+
+    msgsSearchInput.addEventListener('focus', enterSearchMode);
+    msgsSearchInput.addEventListener('input', e => {
+      searchQuery = e.target.value;
+      if (!searchActive) enterSearchMode();
+      else renderSearchResults();
+    });
+    searchClearBtn.addEventListener('click', () => {
+      exitSearchMode();
+      msgsSearchInput.blur();
+    });
+    document.addEventListener('click', e => {
+      if (searchActive && !e.target.closest('#searchWrap') && !e.target.closest('#searchResults')) {
+        exitSearchMode();
+      }
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && searchActive) { exitSearchMode(); msgsSearchInput.blur(); }
+    });
+    searchResults.addEventListener('click', e => {
+      const row = e.target.closest('.msgs-search-result-row');
+      if (!row) return;
+      if (row.dataset.kind === 'message') {
+        jumpToMessage(row.dataset.id, Number(row.dataset.index));
+      } else {
+        openConversation(row.dataset.id);
+      }
+      exitSearchMode();
+    });
+
+    const filterBtn = document.getElementById('filterBtn');
+    const filterMenu = document.getElementById('filterMenu');
+    function openFilterMenu() { filterMenu.hidden = false; filterBtn.setAttribute('aria-expanded', 'true'); }
+    function closeFilterMenu() { filterMenu.hidden = true; filterBtn.setAttribute('aria-expanded', 'false'); }
+    filterBtn.addEventListener('click', () => { if (filterMenu.hidden) openFilterMenu(); else closeFilterMenu(); });
+    document.addEventListener('click', e => { if (!filterMenu.hidden && !e.target.closest('.msgs-filter-wrap')) closeFilterMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !filterMenu.hidden) { closeFilterMenu(); filterBtn.focus(); } });
+    document.querySelectorAll('.msgs-filter-item').forEach(item => {
+      item.addEventListener('click', () => {
+        currentFilter = item.dataset.filter;
+        document.querySelectorAll('.msgs-filter-item').forEach(i => i.classList.toggle('active', i === item));
+        renderThreadList();
+        closeFilterMenu();
+      });
+    });
+
+    renderThreadList();
+
+    // The "+" button starts a brand-new compose draft (see
+    // startComposeMode() above) — existing conversations stay visible in
+    // the list underneath it, per Martin's 2026-09-04 redesign (see the
+    // block comment above startComposeMode).
+    document.getElementById('composeBtn').addEventListener('click', startComposeMode);
+
+    // ------------------------------------------------------------------
+    // Deep-link from contacts.html (2026-09-02, per Martin's district
+    // directory — every contact gets a working Message button, not just
+    // current teachers): a contact card's Message button links here as
+    // messages.html?compose=<id>, plus &name=/&dept=/&color= for anyone
+    // who isn't already one of this page's own TEACHERS. When <id> is a
+    // known teacher those extra params are ignored and the existing
+    // TEACHERS entry is used as-is; otherwise a TEACHERS entry is built
+    // from the URL params on the fly (same {name, course, color} shape
+    // every other entry has), so the rest of the app — avatarBg(),
+    // person(), the thread header, etc. — treats a district contact
+    // exactly like a current teacher without needing them hand-authored
+    // here. Either way this reuses startNewThreadWith(), so arriving via
+    // a deep link opens straight into that person's identity (no To
+    // dropdown needed — see the comment above startNewThreadWith).
+    // ------------------------------------------------------------------
+    (function handleComposeDeepLink() {
+      const params = new URLSearchParams(window.location.search);
+      const composeId = params.get('compose');
+      if (!composeId) return;
+      if (!TEACHERS[composeId]) {
+        const name = params.get('name');
+        if (!name) return; // not a known teacher and no fallback info to build one from
+        TEACHERS[composeId] = {
+          name,
+          course: params.get('dept') || '',
+          color: params.get('color') || '#83849a',
+        };
+      }
+      startNewThreadWith(composeId);
+    })();
+
+    // ------------------------------------------------------------------
+    // Nav — Home/Courses/Grades/Assignments are real pages now; Calendar/
+    // Settings stay visual-only placeholders, same convention used
+    // everywhere else in the app.
+    // ------------------------------------------------------------------
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as every other page.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>

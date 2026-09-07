@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Course Hub</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from home.html /
+     courses.html so this page reads as the same app. See
+     architecture-decisions.md re: promoting this to a real shared
+     stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+    /* Set per-course at load (see JS setCourseVars) — everything specific
+       to "whose hub this is" (banner, active nav, grade hero, calendar
+       dots, assignment ticks) reads from these two instead of a fixed
+       color, so the same page serves any of the six sample courses via
+       ?course=. */
+    --course-color: #a67a22;
+    --course-color-dark: #8a6519;
+    --course-color-tint: rgba(166, 122, 34, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    background-color: var(--page-bg-end);
+    background-image: url("data:image/png;base64,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");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    /* Extra bottom padding clears the now-permanently-visible bottom
+       nav bar so it never overlaps page content. */
+    padding: 40px 24px 116px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 1120px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- the hub cards
+      grow to their natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.82);
+    font-weight: 800;
+    font-size: 0.76rem;
+    padding: 0;
+    margin: 0 0 6px 4px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .back-link svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .back-link:hover { color: #fff; }
+  .back-link:focus-visible { outline: none; text-decoration: underline; }
+
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+
+  .title-wrap { min-width: 0; }
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.5rem, 3.2vw, 2rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+    border-bottom: 3px solid var(--course-color);
+    padding-bottom: 3px;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.85rem;
+    margin: 5px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- Card shell, same as every other page ---------- */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+  }
+  .card-inner {
+    padding: 20px 22px;
+  }
+  .card h2 {
+    font-size: 0.92rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0 0 12px;
+  }
+
+  /* ---------- Hub layout: sidebar / grade+calendar / assignments ---------- */
+  /* Each column just takes its own natural content height; .page (above)
+     scrolls as a whole when the stack runs taller than the viewport. */
+  .hub-grid {
+    display: grid;
+    grid-template-columns: 208px 1fr 300px;
+    gap: 18px;
+    align-items: start;
+  }
+  .hub-middle, .hub-right { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ---------- Sidebar: banner + course nav ---------- */
+  .course-banner {
+    position: relative;
+    border-radius: var(--window-radius-lg);
+    padding: 16px 14px 14px;
+    min-height: 128px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: linear-gradient(155deg, var(--course-color) 0%, var(--course-color-dark) 100%);
+    box-shadow: 0 20px 40px -18px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+  .course-banner::before {
+    content: '';
+    position: absolute;
+    top: -30%; right: -20%;
+    width: 70%; height: 140%;
+    background: rgba(255,255,255,0.12);
+    transform: rotate(18deg);
+  }
+  .banner-icon {
+    width: 30px; height: 30px;
+    color: rgba(255,255,255,0.9);
+    margin-bottom: 8px;
+  }
+  .banner-icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.8; }
+  .banner-name { color: #fff; font-weight: 800; font-size: 1rem; font-style: italic; line-height: 1.15; position: relative; }
+  .banner-code { color: rgba(255,255,255,0.78); font-weight: 700; font-size: 0.68rem; margin-top: 3px; position: relative; }
+  .banner-info-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    border: none;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 0.72rem;
+    font-style: normal;
+  }
+  .banner-info-btn:hover { background: rgba(255,255,255,0.34); }
+  .banner-info-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  .course-nav { margin-top: 12px; background: var(--panel-bg); border-radius: var(--window-radius-lg); box-shadow: 0 20px 40px -18px rgba(0,0,0,0.4); padding: 8px; }
+  .course-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    padding: 10px 10px;
+    font-family: inherit;
+    font-weight: 800;
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-align: left;
+  }
+  .course-nav-item svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .course-nav-item:hover { background: var(--panel-inner); color: var(--text-dark); }
+  /* Full ring around the whole item (not just a left accent bar) — a
+     box-shadow rather than a real border so it can't shift layout or
+     get clipped into a partial "bracket" shape by the item's own
+     border-radius the way a one-sided border does. Same ring idiom the
+     calendar's .cal-day.today uses below. */
+  .course-nav-item.active {
+    background: var(--course-color-tint);
+    color: var(--text-dark);
+    box-shadow: 0 0 0 2px var(--course-color) inset;
+  }
+  .course-nav-item.active svg { color: var(--course-color); }
+  .course-nav-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) inset; }
+
+  /* ---------- Grade hero ---------- */
+  .grade-hero-row { display: flex; align-items: stretch; gap: 14px; }
+  .grade-hero-block { flex: 1; background: var(--panel-inner); border-radius: var(--window-radius-md); padding: 14px 16px; }
+  .grade-hero-label { font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin: 0 0 4px; }
+  .grade-hero-val { font-size: 1.9rem; font-weight: 900; line-height: 1; }
+  .grade-hero-val.good { color: var(--grade-good); }
+  .grade-hero-val.mid { color: var(--grade-mid); }
+  .grade-hero-val.bad { color: var(--grade-bad); }
+  .grade-hero-pct { font-size: 0.78rem; font-weight: 700; color: var(--text-faint); margin-left: 6px; }
+  .grade-hero-predicted { cursor: help; }
+  .grade-hero-predicted:hover, .grade-hero-predicted:focus-visible { filter: brightness(0.96); }
+  .grade-hero-predicted:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .grade-hero-trend { display: inline-flex; align-items: center; gap: 3px; font-weight: 800; }
+  .grade-hero-trend .arrow { width: 13px; display: inline-flex; justify-content: center; font-size: 1rem; }
+  .grade-hero-trend.up .arrow { color: var(--grade-good); }
+  .grade-hero-trend.down .arrow { color: var(--grade-bad); }
+  .grade-hero-trend.flat .arrow { color: var(--text-faint); }
+  .grade-hero-updated { font-size: 0.7rem; color: var(--text-faint); margin-top: 10px; text-align: right; }
+
+  /* ---------- Predicted-grade popup — same component as courses.html ---------- */
+  .grade-popup {
+    position: fixed;
+    z-index: 50;
+    width: 272px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 22px 48px -16px rgba(0,0,0,0.5);
+    padding: 14px 16px 10px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+  }
+  .grade-popup.show { opacity: 1; visibility: visible; transform: translateY(0); pointer-events: auto; }
+  .grade-popup h3 { margin: 0 0 2px; font-size: 0.82rem; font-weight: 800; color: var(--text-dark); }
+  .grade-popup .popup-sub { font-size: 0.7rem; color: var(--text-muted); margin: 0 0 8px; line-height: 1.4; }
+  .grade-popup .popup-sub strong { color: var(--text-dark); }
+  .grade-popup svg { display: block; overflow: visible; }
+  .grade-popup .popup-foot { font-size: 0.62rem; color: var(--text-faint); margin: 6px 0 0; text-align: right; font-style: italic; }
+  @media (prefers-reduced-motion: reduce) { .grade-popup { transition: none; } }
+
+  /* ---------- Calendar ---------- */
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cal-nav { display: flex; align-items: center; gap: 6px; }
+  .cal-month { font-size: 0.8rem; font-weight: 800; color: var(--text-muted); min-width: 96px; text-align: center; }
+  .cal-nav-btn {
+    background: var(--panel-inner);
+    border: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    font-weight: 800;
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .cal-nav-btn:hover { color: var(--text-dark); background: var(--course-color-tint); }
+  .cal-nav-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { text-align: center; font-size: 0.6rem; font-weight: 800; color: var(--text-faint); text-transform: uppercase; padding-bottom: 4px; }
+  .cal-day {
+    position: relative;
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--window-radius-sm);
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    cursor: pointer;
+  }
+  .cal-day.pad { visibility: hidden; cursor: default; }
+  .cal-day:hover { background: var(--panel-inner); }
+  .cal-day.today { box-shadow: 0 0 0 2px var(--course-color) inset; }
+  .cal-day.selected { background: var(--accent); color: #fff; }
+  .cal-day .dot { width: 14px; height: 3px; border-radius: 2px; background: var(--course-color); margin-top: 2px; }
+  .cal-day.selected .dot { background: #fff; }
+  .cal-day:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  .cal-selected-info {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .cal-selected-date { font-size: 0.7rem; font-weight: 800; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 6px; }
+  .cal-selected-item { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; padding: 4px 0; }
+  .cal-selected-item .type { font-size: 0.62rem; font-weight: 800; text-transform: uppercase; color: var(--text-faint); }
+  .cal-selected-item .name { font-weight: 700; color: var(--text-dark); flex: 1; min-width: 0; }
+  .cal-selected-empty { font-size: 0.78rem; color: var(--text-faint); font-style: italic; }
+
+  /* ---------- Assignment list ---------- */
+  .assign-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .assign-filter {
+    background: var(--panel-inner);
+    border: none;
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .assign-filter:hover { color: var(--text-dark); }
+  .assign-filter.active { background: var(--course-color); color: #fff; }
+  .assign-filter:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  .assign-group-label { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin: 14px 0 2px; }
+  .assign-group-label:first-child { margin-top: 0; }
+  .hub-assign-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .hub-assign-item:last-child { border-bottom: none; }
+  .hub-assign-tick { width: 4px; align-self: stretch; min-height: 32px; border-radius: 999px; flex-shrink: 0; background: var(--text-faint); }
+  .hub-assign-item.overdue .hub-assign-tick { background: var(--grade-bad); }
+  .hub-assign-item.graded .hub-assign-tick { background: var(--grade-good); }
+  .hub-assign-item.upcoming .hub-assign-tick { background: var(--course-color); }
+  .hub-assign-text { flex: 1; min-width: 0; }
+  .hub-assign-title { font-weight: 700; font-size: 0.82rem; color: var(--text-dark); margin: 0; }
+  .hub-assign-meta { font-size: 0.7rem; color: var(--text-muted); margin: 1px 0 0; }
+  .hub-assign-meta .type { text-transform: uppercase; letter-spacing: 0.03em; font-weight: 800; color: var(--text-faint); }
+  .hub-assign-due { font-size: 0.72rem; font-weight: 700; color: var(--text-faint); white-space: nowrap; text-align: right; flex-shrink: 0; }
+  .hub-assign-item.overdue .hub-assign-due { color: var(--grade-bad); }
+  .hub-assign-item.graded .hub-assign-due { color: var(--grade-good); }
+  .assign-empty { font-size: 0.8rem; color: var(--text-faint); font-style: italic; padding: 10px 0; }
+
+  /* ---------- Announcements widget — new card in the middle column,
+     above Current + Predicted Grade, since teacher posts are the most
+     time-sensitive thing on a course hub. (The sidebar used to also
+     have an "Updates" sub-nav tab this widget was meant to stay
+     distinct from — that tab was removed 2026-08-28 per Martin's
+     request, so this widget is now the only "recent activity" surface
+     on the Home tab.) Pinned posts float to the top; clicking a post
+     marks it read and clears its dot, same lightweight interaction as
+     the rest of this mock (no backend). */
+  .announce-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .announce-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .announce-count {
+    background: var(--course-color);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 999px;
+    line-height: 1.3;
+    flex-shrink: 0;
+  }
+  .announce-see-all {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.72rem;
+    color: var(--course-color);
+    cursor: pointer;
+    padding: 0;
+  }
+  .announce-see-all:hover { color: var(--course-color-dark); text-decoration: underline; }
+  .announce-see-all:focus-visible { outline: none; text-decoration: underline; }
+  .announce-see-all[hidden] { display: none; }
+  /* Modal reuses the same .modal-overlay/.modal-box "course info" popup
+     component below — dark full-page backdrop, click on the backdrop
+     (not the box) closes it, Escape closes it. This is the standing
+     popup convention for the whole app now (see architecture-decisions
+     .md): a popup darkens everything else so the popup itself reads as
+     the brightest thing on screen, and a click anywhere outside the
+     popup box dismisses it. Only new pieces here are the wider box and
+     a scrollable list, since the default .modal-box isn't built to hold
+     an arbitrarily long list. */
+  .modal-box.announce-modal-box { max-width: 440px; }
+  .announce-modal-list { max-height: 60vh; overflow-y: auto; margin: 8px -4px 0; padding: 0 4px 2px; }
+  .announce-item { padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; background: none; border-left: none; border-right: none; border-top: none; width: 100%; text-align: left; font: inherit; }
+  .announce-item:last-child { border-bottom: none; }
+  .announce-item:hover .announce-text { color: var(--text-dark); }
+  .announce-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); border-radius: var(--window-radius-sm); }
+  .announce-item-head { display: flex; align-items: center; gap: 8px; }
+  .announce-avatar {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--course-color);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.66rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .announce-author { font-weight: 800; font-size: 0.78rem; color: var(--text-dark); }
+  .announce-pin-icon { width: 12px; height: 12px; color: var(--course-color); flex-shrink: 0; }
+  .announce-pin-icon svg { width: 100%; height: 100%; fill: currentColor; }
+  .announce-time { font-size: 0.66rem; color: var(--text-faint); margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+  .announce-unread-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--course-color); flex-shrink: 0; }
+  .announce-text { font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; margin: 4px 0 0; padding-left: 32px; }
+  .announce-empty { font-size: 0.8rem; color: var(--text-faint); font-style: italic; padding: 10px 0; }
+
+  /* ---------- Course info modal — "course info pop-out" from site-map's
+     Course-page spec: darkens the rest of the page except this box. ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10, 8, 6, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; z-index: 60;
+    opacity: 0; visibility: hidden; transition: opacity 0.15s ease;
+  }
+  .modal-overlay.show { opacity: 1; visibility: visible; }
+  .modal-box {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    max-width: 380px; width: 100%;
+    padding: 22px 24px;
+    box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);
+    transform: translateY(8px);
+    transition: transform 0.15s ease;
+  }
+  .modal-overlay.show .modal-box { transform: translateY(0); }
+  .modal-close {
+    float: right;
+    background: var(--panel-inner);
+    border: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .modal-close:hover { color: var(--text-dark); }
+  .modal-box h3 { margin: 2px 0 2px; font-size: 1.1rem; font-weight: 900; font-style: italic; color: var(--text-dark); }
+  .modal-code { font-size: 0.76rem; font-weight: 700; color: var(--text-faint); margin: 0 0 14px; }
+
+  /* Course-name editor — an <input> standing in for the old plain <h3>,
+     styled to look identical to it at rest so the modal doesn't read as
+     "a form" until you interact with it. A dashed underline on hover and
+     a solid accent one while focused are the only hints it's editable,
+     matching the color swatch's own low-key, inline-editing feel below.
+     Live-updates on `input` (same reasoning as the color picker) so the
+     banner name and hub title track every keystroke rather than only
+     the eventual blur/Enter. */
+  .modal-name-input {
+    display: block;
+    width: 100%;
+    margin: 2px 0 2px;
+    padding: 0 0 2px;
+    border: none;
+    border-bottom: 1px dashed transparent;
+    background: none;
+    font-family: inherit;
+    font-size: 1.1rem;
+    font-weight: 900;
+    font-style: italic;
+    color: var(--text-dark);
+  }
+  .modal-name-input:hover { border-bottom-color: var(--border); }
+  .modal-name-input:focus-visible { outline: none; border-bottom-color: var(--accent); }
+  .modal-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+  .modal-row:last-of-type { border-bottom: none; }
+  .modal-row .k { color: var(--text-faint); font-weight: 700; }
+  .modal-row .v { color: var(--text-dark); font-weight: 700; text-align: right; }
+  .modal-desc { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin: 12px 0 0; }
+
+  /* Course-color picker — a small round swatch button that opens a
+     popup grid of preset colors, replacing the native
+     <input type="color"> (which doesn't behave consistently everywhere
+     it's used — see the shared popup component below). Pre-filled with
+     the current value; picking a swatch calls applyCourseColor(hex)
+     live, same as the native input's old `input`-event wiring did. */
+  .modal-color-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 2px solid var(--panel-bg);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1.5px var(--border);
+    cursor: pointer;
+    background: none;
+    vertical-align: middle;
+  }
+  .modal-color-btn:focus-visible { outline: none; box-shadow: 0 0 0 1.5px var(--border), 0 0 0 4px var(--accent-ring); }
+
+  /* Reusable color-swatch popup — flat 48-color grid (4 rows of 12: vivid
+     / pastel / deep / grayscale), this app's own style rather than any
+     OS color panel. Shared markup/behavior for every color picker on
+     this page (currently just the course-color swatch above). */
+  .color-swatch-wrap { position: relative; display: inline-block; }
+  /* position:fixed with top/left set by JS (see initColorSwatchPopup's
+     reposition()) rather than a static CSS offset — this popup lives
+     inside the Course Info modal, and a static top/right-anchored popup
+     could run past the modal's own bottom edge (and overlap the
+     description text below it) depending on which row triggers it. JS
+     measures the popup and clamps it fully on-screen on open. Columns
+     are a fixed 16px (matching .color-swatch-cell) rather than 1fr with
+     a separately-guessed container width — those two had drifted out of
+     sync (236px fit 1fr tracks ~13px wide, but the cells were fixed at
+     16px), so cells overflowed past the white background box on the
+     right. Fixed-position elements with no explicit width shrink-wrap
+     to their content, so leaving width unset now sizes the box to
+     exactly match the grid every time. */
+  .color-swatch-popup {
+    position: fixed;
+    z-index: 60;
+    display: none;
+    grid-template-columns: repeat(12, 16px);
+    gap: 5px;
+    padding: 12px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+  .color-swatch-popup.show { display: grid; }
+  .color-swatch-cell {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    border: none;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+    transition: transform 0.1s ease;
+  }
+  .color-swatch-cell:hover, .color-swatch-cell:focus-visible {
+    transform: scale(1.22);
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--course-color, #333);
+    outline: none;
+  }
+
+  /* ---------- Bottom nav — permanently visible (2026-08-26, per
+     Martin's request — was previously hidden by default and revealed
+     by an up-arrow tab; the tab and its show/hide toggle are gone). ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px max(20px, env(safe-area-inset-bottom));
+    z-index: 10;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+
+  @media (max-width: 900px) {
+    /* Stacked to one column; each group just takes the height its
+       content needs, same as desktop. */
+    .hub-grid { grid-template-columns: 1fr; }
+    .hub-sidebar { display: flex; gap: 12px; }
+    .course-banner { flex: 1; }
+    .course-nav { flex: 1; margin-top: 0; }
+  }
+  @media (max-width: 560px) {
+    .hub-sidebar { flex-direction: column; }
+    .grade-hero-row { flex-direction: column; }
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <button class="back-link" type="button" onclick="window.location.href='courses.html'">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      All Courses
+    </button>
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1 class="title" id="hubTitle">Your Course Hub</h1>
+        <p class="subtitle" id="hubSubtitle"></p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="hub-grid">
+      <div class="hub-sidebar">
+        <div class="course-banner">
+          <button class="banner-info-btn" id="infoBtn" type="button" aria-haspopup="dialog" aria-label="Course info">i</button>
+          <div class="banner-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+          <div class="banner-name" id="bannerName">AP Chemistry</div>
+          <div class="banner-code" id="bannerCode">76_M0431</div>
+        </div>
+        <nav class="course-nav" aria-label="Course sections">
+          <button class="course-nav-item active" type="button" data-section="home">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+            Home
+          </button>
+          <button class="course-nav-item" type="button" data-section="materials" data-href="course-materials.html">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+            Materials
+          </button>
+          <button class="course-nav-item" type="button" data-section="gradebook" data-href="gradebook.html">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>
+            Gradebook
+          </button>
+        </nav>
+      </div>
+
+      <div class="hub-middle">
+        <div class="card">
+          <div class="card-inner">
+            <div class="announce-head">
+              <h2 style="margin:0">Announcements</h2>
+              <div class="announce-head-actions">
+                <span class="announce-count" id="announceCount" hidden></span>
+                <button type="button" class="announce-see-all" id="announceSeeAllBtn" hidden>See all</button>
+              </div>
+            </div>
+            <div id="announceList"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-inner">
+            <h2>Current + Predicted Grade</h2>
+            <div class="grade-hero-row">
+              <div class="grade-hero-block">
+                <p class="grade-hero-label">Current</p>
+                <span class="grade-hero-val" id="curVal"></span>
+              </div>
+              <div class="grade-hero-block grade-hero-predicted" id="predBlock" tabindex="0" role="button" aria-haspopup="true">
+                <p class="grade-hero-label">Predicted</p>
+                <span class="grade-hero-val" id="predVal"></span>
+              </div>
+            </div>
+            <p class="grade-hero-updated" id="hubUpdated"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-inner">
+            <div class="cal-head">
+              <h2 style="margin:0">Upcoming Calendar</h2>
+              <div class="cal-nav">
+                <button class="cal-nav-btn" id="calPrevBtn" type="button" aria-label="Previous month">‹</button>
+                <span class="cal-month" id="calMonthLabel">August 2026</span>
+                <button class="cal-nav-btn" id="calNextBtn" type="button" aria-label="Next month">›</button>
+              </div>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+            <div class="cal-selected-info">
+              <p class="cal-selected-date" id="calSelDate"></p>
+              <div id="calSelItems"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hub-right">
+        <div class="card">
+          <div class="card-inner">
+            <h2>Assignment List</h2>
+            <div class="assign-filters" id="assignFilters">
+              <button class="assign-filter active" type="button" data-filter="all">All</button>
+              <button class="assign-filter" type="button" data-filter="overdue">Missing</button>
+              <button class="assign-filter" type="button" data-filter="upcoming">Upcoming</button>
+              <button class="assign-filter" type="button" data-filter="graded">Graded</button>
+            </div>
+            <div id="assignListBody"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grade-popup" id="gradePopup" role="tooltip"></div>
+
+  <div class="modal-overlay" id="infoModal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalCourseName">
+      <button class="modal-close" id="modalCloseBtn" type="button" aria-label="Close course info">✕</button>
+      <input type="text" id="modalCourseName" class="modal-name-input" aria-label="Course name" value="AP Chemistry">
+      <p class="modal-code" id="modalCode">76_M0431</p>
+      <div class="modal-row"><span class="k">Teacher</span><span class="v" id="modalTeacher"></span></div>
+      <div class="modal-row"><span class="k">Period</span><span class="v" id="modalPeriod"></span></div>
+      <div class="modal-row"><span class="k">Section</span><span class="v" id="modalSection"></span></div>
+      <div class="modal-row"><span class="k">Current grade</span><span class="v" id="modalGrade"></span></div>
+      <div class="modal-row">
+        <span class="k">Course color</span>
+        <span class="v">
+          <span class="color-swatch-wrap">
+            <button type="button" class="modal-color-btn" id="modalColorBtn" aria-haspopup="true" aria-expanded="false" aria-label="Change this course's color"></button>
+            <div class="color-swatch-popup" id="modalColorPopup" role="menu" aria-label="Preset colors"></div>
+          </span>
+        </span>
+      </div>
+      <p class="modal-desc" id="modalDesc"></p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="announceModal">
+    <div class="modal-box announce-modal-box" role="dialog" aria-modal="true" aria-labelledby="announceModalTitle">
+      <button class="modal-close" id="announceModalCloseBtn" type="button" aria-label="Close announcements">✕</button>
+      <h3 id="announceModalTitle" style="margin:2px 0 2px;">Announcements</h3>
+      <div class="announce-modal-list" id="announceModalList"></div>
+    </div>
+  </div>
+
+  <nav class="app-nav" id="appNav" aria-label="Main navigation">
+    <div class="app-nav-inner">
+      <button class="nav-link" type="button" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Reusable color-swatch popup (replaces native <input type="color">,
+    // which doesn't behave consistently everywhere it's used). A flat
+    // 48-color grid — 4 rows (vivid / pastel / deep / grayscale) of 12
+    // hues each — in this app's own flat style, not a copy of any OS
+    // color panel. initColorSwatchPopup(button, popupEl, onPick) wires a
+    // trigger button to a popup grid built from this palette; returns
+    // { close() } so callers can dismiss it programmatically.
+    // ------------------------------------------------------------------
+    const SWATCH_PALETTE = [
+      ['#e52e2e', '#e58a2e', '#e5e52e', '#8ae52e', '#2ee52e', '#2ee58a', '#2ee5e5', '#2e8ae5', '#2e2ee5', '#8a2ee5', '#e52ee5', '#e52e8a'],
+      ['#f1b1b1', '#f1d1b1', '#f1f1b1', '#d1f1b1', '#b1f1b1', '#b1f1d1', '#b1f1f1', '#b1d1f1', '#b1b1f1', '#d1b1f1', '#f1b1f1', '#f1b1d1'],
+      ['#812222', '#815222', '#818122', '#528122', '#228122', '#228152', '#228181', '#225281', '#222281', '#522281', '#812281', '#812252'],
+      ['#f5f5f5', '#e0e0e0', '#cccccc', '#b8b8b8', '#a3a3a3', '#8f8f8f', '#7a7a7a', '#666666', '#525252', '#3d3d3d', '#292929', '#141414'],
+    ];
+    function initColorSwatchPopup(btn, popup, onPick) {
+      SWATCH_PALETTE.flat().forEach(hex => {
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'color-swatch-cell';
+        cell.style.background = hex;
+        cell.setAttribute('aria-label', hex);
+        cell.addEventListener('click', () => {
+          btn.style.background = hex;
+          onPick(hex);
+          closePopup();
+        });
+        popup.appendChild(cell);
+      });
+      function outsideClick(e) {
+        if (!popup.contains(e.target) && e.target !== btn) closePopup();
+      }
+      function onKeydown(e) {
+        if (e.key === 'Escape') closePopup();
+      }
+      // Fixed-position, clamped to the viewport: anchors under the
+      // button (right-aligned to it) by default, but flips above the
+      // button if there isn't room below, and never lets the popup's
+      // left/right/bottom edges pass the viewport margins — so it can't
+      // run past the modal it's nested in or off screen.
+      function reposition() {
+        const margin = 10;
+        const b = btn.getBoundingClientRect();
+        const p = popup.getBoundingClientRect();
+        let left = b.right - p.width;
+        left = Math.min(left, window.innerWidth - p.width - margin);
+        left = Math.max(margin, left);
+        let top = b.bottom + 8;
+        if (top + p.height > window.innerHeight - margin) {
+          top = b.top - p.height - 8;
+          if (top < margin) top = margin;
+        }
+        popup.style.left = left + 'px';
+        popup.style.top = top + 'px';
+        // A transformed ancestor (the Course Info modal box slides in via
+        // CSS `transform`) makes a position:fixed descendant relative to
+        // THAT ancestor instead of the viewport, per spec — so the values
+        // above can land in the wrong place. Measure where it actually
+        // rendered and nudge by the difference; a no-op when there's no
+        // such ancestor.
+        const rendered = popup.getBoundingClientRect();
+        const dx = left - rendered.left;
+        const dy = top - rendered.top;
+        if (dx || dy) {
+          popup.style.left = (left + dx) + 'px';
+          popup.style.top = (top + dy) + 'px';
+        }
+      }
+      function openPopup() {
+        popup.classList.add('show');
+        btn.setAttribute('aria-expanded', 'true');
+        reposition();
+        document.addEventListener('click', outsideClick, true);
+        document.addEventListener('keydown', onKeydown);
+        window.addEventListener('scroll', reposition, true);
+        window.addEventListener('resize', reposition);
+      }
+      function closePopup() {
+        popup.classList.remove('show');
+        btn.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('click', outsideClick, true);
+        document.removeEventListener('keydown', onKeydown);
+        window.removeEventListener('scroll', reposition, true);
+        window.removeEventListener('resize', reposition);
+      }
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (popup.classList.contains('show')) closePopup();
+        else openPopup();
+      });
+      return { close: closePopup };
+    }
+
+    // ------------------------------------------------------------------
+    // Same six sample courses as home.html/courses.html (same id/name/
+    // color/grade/predicted/updated values), plus the course-code/period/
+    // teacher/section fields courses.html added. Kept in sync by hand
+    // across the three files for now — see architecture-decisions.md's
+    // note about promoting shared sample data once there's a build step.
+    // ------------------------------------------------------------------
+    const COURSES = [
+      { id: 'apchem', name: 'AP Chemistry', code: '76_M0431', period: 2, teacher: 'Mr. Alvarez', section: '1204', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago', desc: 'Lab-based introduction to chemical reactions, stoichiometry, and gas laws, with weekly lab reports.' },
+      { id: 'algebra2', name: 'Algebra II', code: '76_S0512', period: 3, teacher: 'Mr. Whitfield', section: '1188', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago', desc: 'Functions, systems of equations, and factoring, building toward Pre-Calculus.' },
+      { id: 'english10', name: 'English 10', code: '76_F0288', period: 4, teacher: 'Ms. Cho', section: '1350', color: '#6b8f5e', grade: 'C+', pct: 78, predicted: 'C', predictedPct: 74, trend: 'down', updated: '3h ago', desc: 'Reading and composition, with weekly reading journals and discussion posts.' },
+      { id: 'ushistory', name: 'U.S. History', code: '76_R0367', period: 1, teacher: 'Mrs. Bennett', section: '1092', color: '#a15c4f', grade: 'A-', pct: 91, predicted: 'A-', predictedPct: 91, trend: 'flat', updated: '5h ago', desc: 'Colonial era through Reconstruction, with primary-source analysis and a timeline project.' },
+      { id: 'spanish3', name: 'Spanish III', code: '76_G0295', period: 5, teacher: 'Sra. Ortiz', section: '1417', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago', desc: 'Intermediate conversation and composition, with weekly listening checks.' },
+      { id: 'pe', name: 'PE', code: '76_P0300', period: 6, teacher: 'Coach Reyes', section: '1125', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago', desc: 'Fitness training and team sports, graded on participation and fitness logs.' },
+    ];
+
+    // Which course this hub is showing — from ?course=<id> in the URL,
+    // same route shape as site-map.md's /courses/{course_id}. Falls back
+    // to AP Chemistry (this draft's own "Your Ap Chem Hub" example) for
+    // a bare visit with no query string.
+    const courseId = new URLSearchParams(location.search).get('course') || 'apchem';
+    const course = COURSES.find(c => c.id === courseId) || COURSES[0];
+
+    function lighten(hex, amt) {
+      const n = parseInt(hex.slice(1), 16);
+      const r = Math.min(255, (n >> 16) + amt), g = Math.min(255, ((n >> 8) & 255) + amt), b = Math.min(255, (n & 255) + amt);
+      return `rgb(${r},${g},${b})`;
+    }
+    function darken(hex, amt) { return lighten(hex, -amt); }
+
+    // Everything specific to "whose hub this is" hangs off these three
+    // CSS variables — read everywhere else in the CSS above (banner,
+    // active course-nav item, calendar dots, assignment ticks, filter
+    // pills). Pulled into a function (not just set once at load) so the
+    // info modal's color picker below can call it again live as the
+    // user drags — also updates `course.color` itself so the Predicted
+    // popup's SVG chart, which reads that value directly rather than
+    // the CSS var, picks up the change too.
+    function applyCourseColor(hex) {
+      course.color = hex;
+      document.documentElement.style.setProperty('--course-color', hex);
+      document.documentElement.style.setProperty('--course-color-dark', darken(hex, 28));
+      document.documentElement.style.setProperty('--course-color-tint', lighten(hex, 210).replace('rgb', 'rgba').replace(')', ', 0.16)'));
+    }
+    applyCourseColor(course.color);
+
+    document.getElementById('hubTitle').textContent = `Your ${course.name} Hub`;
+    document.getElementById('hubSubtitle').textContent = `${course.code} · Pd:${course.period} ${course.teacher} - ${course.section}`;
+    document.getElementById('bannerName').textContent = course.name;
+    document.getElementById('bannerCode').textContent = course.code;
+    document.title = `Schoolagy — ${course.name} Hub`;
+
+    // ------------------------------------------------------------------
+    // Announcements widget — teacher posts for this course, newest
+    // first with pinned posts always floating to the top. Front-end
+    // only, kept in-memory: clicking a post just clears its own unread
+    // dot and re-renders, no backend to actually mark anything read.
+    // ------------------------------------------------------------------
+    const ANNOUNCEMENTS = {
+      apchem: [
+        { id: 'a1', text: 'Titration lab moved to Friday — bring safety goggles and your lab notebook.', time: '2h ago', pinned: true, unread: true },
+        { id: 'a2', text: 'Great averages on the Gas Laws Test! Quiz corrections are due Monday for anyone under 80%.', time: '1d ago', pinned: false, unread: true },
+        { id: 'a3', text: 'Molarity Worksheet answer key posted under Materials.', time: '3d ago', pinned: false, unread: false },
+        { id: 'a4', text: 'Reminder: bring your calculator for Thursday\'s stoichiometry practice, we\'re not sharing this time.', time: '4d ago', pinned: false, unread: false },
+        { id: 'a5', text: 'Lab Report #3 grades are posted — see me during tutorial if you want to talk about your rubric score.', time: '6d ago', pinned: false, unread: false },
+        { id: 'a6', text: 'Safety contract signatures are still missing from a few of you — check the folder by Friday.', time: '7d ago', pinned: false, unread: false },
+        { id: 'a7', text: 'Extra office hours added Thursday morning before school for anyone behind on labs.', time: '8d ago', pinned: false, unread: false },
+        { id: 'a8', text: 'Unit 2 starts Monday — readings are posted under Materials, please skim before class.', time: '9d ago', pinned: false, unread: false },
+        { id: 'a9', text: 'Field trip permission slips for the science museum are due Friday.', time: '10d ago', pinned: false, unread: false },
+        { id: 'a10', text: 'Curved the last quiz a bit — updated scores are in the gradebook.', time: '11d ago', pinned: false, unread: false },
+        { id: 'a11', text: 'Reminder to bring goggles every lab day, not just when I specifically ask.', time: '12d ago', pinned: false, unread: false },
+        { id: 'a12', text: 'Study guide for the midterm is posted under Materials.', time: '13d ago', pinned: false, unread: false },
+        { id: 'a13', text: 'Great work on this round of lab reports overall — keep it up.', time: '14d ago', pinned: false, unread: false },
+        { id: 'a14', text: 'Seating chart updated for next week — check the new chart on the door.', time: '15d ago', pinned: false, unread: false },
+        { id: 'a15', text: 'Welcome back from break! Quick syllabus reminder attached for anyone who needs it.', time: '16d ago', pinned: false, unread: false },
+      ],
+      algebra2: [
+        { id: 'a1', text: 'No class Wednesday — department PD day. Practice Set 6 is still due Thursday.', time: '5h ago', pinned: true, unread: true },
+        { id: 'a2', text: 'Unit 1 Test grades are posted. Come by tutorial if you want to go over any problem.', time: '2d ago', pinned: false, unread: false },
+      ],
+      english10: [
+        { id: 'a1', text: 'Essay Draft feedback is in — check the comments before you revise for the final draft.', time: '4h ago', pinned: false, unread: true },
+        { id: 'a2', text: 'Reminder: Chapter 6 Discussion post is overdue. Late posts still get partial credit through Friday.', time: '1d ago', pinned: true, unread: true },
+      ],
+      ushistory: [
+        { id: 'a1', text: 'Timeline Project rubric updated — a "primary source count" row was added, worth 10 points.', time: '6h ago', pinned: true, unread: false },
+        { id: 'a2', text: 'Great discussion today on Reconstruction. Reading Response is still open if you missed it.', time: '2d ago', pinned: false, unread: false },
+      ],
+      spanish3: [
+        { id: 'a1', text: '¡Buen trabajo! Listening Check scores were the best yet. Composición 1 prompts go out Monday.', time: '3h ago', pinned: false, unread: true },
+        { id: 'a2', text: 'Vocab Worksheet due date pushed to Tuesday to give everyone extra practice time.', time: '1d ago', pinned: true, unread: true },
+      ],
+      pe: [
+        { id: 'a1', text: 'Bring your fitness log and a water bottle — outdoor circuit training all week.', time: '1d ago', pinned: false, unread: false },
+      ],
+    };
+    const announceItems = (ANNOUNCEMENTS[course.id] || []).slice().sort((a, b) => (b.pinned - a.pinned));
+    function announceRowHTML(item) {
+      return `
+        <button type="button" class="announce-item" data-id="${item.id}">
+          <div class="announce-item-head">
+            <span class="announce-avatar" aria-hidden="true">${course.teacher.replace(/^(Mr\.|Mrs\.|Ms\.|Sra\.|Coach)\s*/, '').charAt(0)}</span>
+            <span class="announce-author">${course.teacher}</span>
+            ${item.pinned ? `<span class="announce-pin-icon" title="Pinned"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 5.6L19.5 9l-4.3 3.6L16.5 18 12 14.8 7.5 18l1.3-5.4L4.5 9l5.7-1.4z"/></svg></span>` : ''}
+            <span class="announce-time">${item.time}</span>
+            ${item.unread ? '<span class="announce-unread-dot" aria-label="Unread"></span>' : ''}
+          </div>
+          <p class="announce-text">${item.text}</p>
+        </button>
+      `;
+    }
+    function renderAnnounceCount() {
+      const unreadCount = announceItems.filter(a => a.unread).length;
+      const badge = document.getElementById('announceCount');
+      badge.textContent = unreadCount;
+      badge.hidden = unreadCount === 0;
+    }
+    // Widget preview shows only the first few (pinned-first, same as the
+    // full list); "See all" opens a scrollable popup with everything —
+    // both lists are re-rendered from the same announceItems array on
+    // every change, so a post read from either place updates both at
+    // once instead of drifting out of sync.
+    const ANNOUNCE_WIDGET_CAP = 3;
+    function renderAnnouncements() {
+      const capped = announceItems.slice(0, ANNOUNCE_WIDGET_CAP);
+      document.getElementById('announceList').innerHTML = capped.length
+        ? capped.map(announceRowHTML).join('')
+        : '<p class="announce-empty">No announcements yet.</p>';
+      document.getElementById('announceModalList').innerHTML = announceItems.length
+        ? announceItems.map(announceRowHTML).join('')
+        : '<p class="announce-empty">No announcements yet.</p>';
+      document.getElementById('announceSeeAllBtn').hidden = announceItems.length === 0;
+      renderAnnounceCount();
+    }
+    renderAnnouncements();
+    function handleAnnounceItemClick(e) {
+      const btn = e.target.closest('.announce-item');
+      if (!btn) return;
+      const item = announceItems.find(a => a.id === btn.dataset.id);
+      if (item && item.unread) { item.unread = false; renderAnnouncements(); }
+    }
+    document.getElementById('announceList').addEventListener('click', handleAnnounceItemClick);
+    document.getElementById('announceModalList').addEventListener('click', handleAnnounceItemClick);
+
+    // "See all" popup — reuses the exact .modal-overlay/.modal-box
+    // component (and its dark-backdrop / click-outside-closes / Escape-
+    // closes behavior) the Course Info popup below already uses, per
+    // this app's one standing popup convention: everything except the
+    // popup itself gets darker, so the popup reads as the bright/active
+    // thing on screen, and a click landing on that dark backdrop (not
+    // the popup box) dismisses it — see architecture-decisions.md.
+    const announceModal = document.getElementById('announceModal');
+    function openAnnounceModal() { announceModal.classList.add('show'); document.getElementById('announceModalCloseBtn').focus(); }
+    function closeAnnounceModal() { announceModal.classList.remove('show'); document.getElementById('announceSeeAllBtn').focus(); }
+    document.getElementById('announceSeeAllBtn').addEventListener('click', openAnnounceModal);
+    document.getElementById('announceModalCloseBtn').addEventListener('click', closeAnnounceModal);
+    announceModal.addEventListener('click', e => { if (e.target === announceModal) closeAnnounceModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && announceModal.classList.contains('show')) closeAnnounceModal(); });
+
+    function gradeBand(letter) {
+      if (letter.startsWith('A')) return 'good';
+      if (letter.startsWith('B')) return 'mid';
+      if (letter.startsWith('C')) return 'mid';
+      return 'bad';
+    }
+    const TREND_ARROW = { up: '↗', down: '↘', flat: '–' };
+    const TREND_WORD = { up: 'Trending up', down: 'Trending down', flat: 'Holding steady' };
+
+    document.getElementById('curVal').innerHTML = `<span class="${gradeBand(course.grade)}">${course.grade}</span><span class="grade-hero-pct">${course.pct}%</span>`;
+    document.getElementById('predVal').innerHTML = `<span class="grade-hero-trend ${course.trend}"><span class="arrow">${TREND_ARROW[course.trend]}</span>${course.predicted}</span><span class="grade-hero-pct">${course.predictedPct}%</span>`;
+    document.getElementById('hubUpdated').textContent = `Updated ${course.updated}`;
+
+    // ------------------------------------------------------------------
+    // Assignment-score history behind the Predicted-grade reasoning
+    // popup — same values as home.html/courses.html's HISTORY, and also
+    // the source for this page's "graded" assignment rows below (each
+    // history point becomes one graded assignment, so the popup chart
+    // and the Assignment List agree with each other).
+    // ------------------------------------------------------------------
+    const HISTORY = {
+      apchem: { points: [72, 79, 84, 88, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Intro Lab Safety Quiz', 'assessment'], ['Stoichiometry Problem Set', 'assignment'], ['Molarity Discussion', 'discussion'], ['Gas Laws Test', 'assessment'], ['Lab Report #3', 'assignment']] },
+      algebra2: { points: [94, 96, 93, 97, 95], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'], titles: [['Warm-Up Quiz 1', 'assessment'], ['Systems of Equations HW', 'assignment'], ['Factoring Discussion', 'discussion'], ['Unit 1 Test', 'assessment'], ['Practice Set 6', 'assignment']] },
+      english10: { points: [88, 82, 79, 76, 73], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Reading Journal 1', 'assignment'], ['Vocabulary Quiz', 'assessment'], ['Chapter 3 Discussion', 'discussion'], ['Essay Draft', 'assignment'], ['Grammar Check', 'assessment']] },
+      ushistory: { points: [89, 93, 88, 92, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Colonial Era Notes', 'assignment'], ['Primary Source Quiz', 'assessment'], ['Revolution Discussion', 'discussion'], ['Timeline Project', 'assignment'], ['Unit 1 Exam', 'assessment']] },
+      spanish3: { points: [76, 80, 83, 85, 87], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'], titles: [['Vocabulario Quiz', 'assessment'], ['Conjugación Practice', 'assignment'], ['Conversación Discussion', 'discussion'], ['Listening Check', 'assessment'], ['Composición 1', 'assignment']] },
+      pe: { points: [96, 98, 95, 97, 96], dates: ['Aug 2', 'Aug 6', 'Aug 10', 'Aug 16', 'Aug 22'], titles: [['Fitness Log 1', 'assignment'], ['Rules Quiz', 'assessment'], ['Team Strategy Discussion', 'discussion'], ['Skills Check', 'assessment'], ['Fitness Log 2', 'assignment']] },
+    };
+
+    // Same OVERDUE/UPCOMING items as courses.html (with a `type` field
+    // added, matching home.html's real values where an item already
+    // exists there) — the not-yet-graded half of each course's
+    // Assignment List, below.
+    const OVERDUE = [
+      { type: 'assignment', title: 'Lab Report #4', courseId: 'apchem', due: 'Fri Aug 21' },
+      { type: 'discussion', title: 'Chapter 6 Discussion', courseId: 'english10', due: 'Thu Aug 20' },
+      { type: 'discussion', title: 'Reading Response', courseId: 'ushistory', due: 'Wed Aug 19' },
+    ];
+    const UPCOMING = [
+      { type: 'assessment', title: 'Unit 2 Quiz', courseId: 'algebra2', due: 'Mon Aug 24' },
+      { type: 'assignment', title: 'Vocab Worksheet', courseId: 'spanish3', due: 'Tue Aug 25' },
+      { type: 'assignment', title: 'Problem Set 7', courseId: 'algebra2', due: 'Wed Aug 26' },
+      { type: 'assignment', title: 'Titration Lab Prep', courseId: 'apchem', due: 'Mon Aug 24' },
+    ];
+
+    // "Due" strings across the whole mock have no year and assume 2026
+    // (same convention home.html's parseMockDate established) — weekday
+    // is computed from a real Date rather than hand-typed, so it can't
+    // drift out of sync with the calendar grid below.
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    function fmtAug(day) { return `${DOW[new Date(2026, 7, day).getDay()]} Aug ${day}`; }
+    // Handles both date-string shapes in play here: HISTORY's "Aug 4"
+    // (2 tokens) and OVERDUE/UPCOMING's "Fri Aug 21" (3 tokens, weekday
+    // included) — the day number is always the last token either way.
+    function dayNum(dateStr) { const parts = dateStr.trim().split(/\s+/); return parseInt(parts[parts.length - 1], 10); }
+
+    const TYPE_LABEL = { assignment: 'Assignment', discussion: 'Discussion', assessment: 'Quiz' };
+
+    // ------------------------------------------------------------------
+    // This course's full Assignment List: graded items derived from
+    // HISTORY (so the popup chart and this list always agree), plus its
+    // Overdue ("Missing") and Upcoming items. Per Martin's request
+    // (2026-08-26), the list is grouped by status rather than merged
+    // into one chronological stream — Missing first (most urgent),
+    // then Upcoming, then Graded — and the Graded group only ever shows
+    // the most recent 5 scores (`.slice(-5)` after sorting by day),
+    // matching the same "last 5 graded assignments" window the
+    // Predicted-grade popup chart already uses, so the two can't
+    // disagree about how far back "recent" reaches.
+    // ------------------------------------------------------------------
+    const hist = HISTORY[course.id];
+    const gradedItems = hist.points.map((score, i) => ({
+      status: 'graded', type: hist.titles[i][1], title: hist.titles[i][0],
+      day: dayNum(hist.dates[i]), due: fmtAug(dayNum(hist.dates[i])), score,
+    })).sort((a, b) => a.day - b.day);
+    const overdueItems = OVERDUE.filter(o => o.courseId === course.id).map(o => ({ status: 'overdue', type: o.type, title: o.title, day: dayNum(o.due), due: o.due })).sort((a, b) => a.day - b.day);
+    const upcomingItems = UPCOMING.filter(u => u.courseId === course.id).map(u => ({ status: 'upcoming', type: u.type, title: u.title, day: dayNum(u.due), due: u.due })).sort((a, b) => a.day - b.day);
+    const gradedRecent = gradedItems.slice(-5);
+
+    function assignRowHTML(item) {
+      return `
+        <div class="hub-assign-item ${item.status}">
+          <span class="hub-assign-tick"></span>
+          <div class="hub-assign-text">
+            <p class="hub-assign-title">${item.title}</p>
+            <p class="hub-assign-meta"><span class="type">${TYPE_LABEL[item.type]}</span></p>
+          </div>
+          <span class="hub-assign-due">${item.status === 'graded' ? `Graded · ${item.score}%` : (item.status === 'overdue' ? 'Missing · ' + item.due : 'Due ' + item.due)}</span>
+        </div>
+      `;
+    }
+    function assignGroupHTML(label, items) {
+      if (!items.length) return '';
+      return `<p class="assign-group-label">${label}</p>` + items.map(assignRowHTML).join('');
+    }
+    function renderAssignList(filter) {
+      const body = document.getElementById('assignListBody');
+      let html;
+      if (filter === 'all') {
+        html = assignGroupHTML('Missing', overdueItems) + assignGroupHTML('Upcoming', upcomingItems) + assignGroupHTML('Graded', gradedRecent);
+      } else if (filter === 'overdue') {
+        html = overdueItems.map(assignRowHTML).join('');
+      } else if (filter === 'upcoming') {
+        html = upcomingItems.map(assignRowHTML).join('');
+      } else {
+        html = gradedRecent.map(assignRowHTML).join('');
+      }
+      body.innerHTML = html || '<p class="assign-empty">Nothing here yet.</p>';
+    }
+    renderAssignList('all');
+    document.getElementById('assignFilters').addEventListener('click', e => {
+      const btn = e.target.closest('.assign-filter');
+      if (!btn) return;
+      document.querySelectorAll('.assign-filter').forEach(b => b.classList.toggle('active', b === btn));
+      renderAssignList(btn.dataset.filter);
+    });
+
+    // ------------------------------------------------------------------
+    // Predicted-grade reasoning popup — same component as home.html /
+    // courses.html, triggered from the grade-hero's Predicted block
+    // instead of a table cell. Own SVG pattern id (predStripesHub) so
+    // it can never collide if this page is ever combined with the
+    // others.
+    // ------------------------------------------------------------------
+    function niceBounds(values) {
+      const min = Math.min(...values), max = Math.max(...values);
+      let lo = Math.floor((min - 6) / 10) * 10;
+      let hi = Math.ceil((max + 6) / 10) * 10;
+      lo = Math.max(0, lo);
+      hi = Math.min(100, hi);
+      if (hi - lo < 20) { hi = Math.min(100, lo + 20); }
+      return [lo, hi];
+    }
+    function buildGradeChartSVG(c) {
+      const h = HISTORY[c.id];
+      const allLabels = h.dates.concat(['Predicted']);
+      const allValues = h.points.concat([c.predictedPct]);
+      const [yLo, yHi] = niceBounds(allValues);
+      const W = 240, H = 108;
+      const padL = 26, padR = 6, padT = 10, padB = 16;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const xFor = i => padL + (i / (allLabels.length - 1)) * plotW;
+      const yFor = v => padT + plotH - ((v - yLo) / (yHi - yLo)) * plotH;
+      const yTicks = [yLo, Math.round((yLo + yHi) / 2), yHi];
+      const gridlines = yTicks.map(t => `
+        <line x1="${padL}" x2="${W - padR}" y1="${yFor(t)}" y2="${yFor(t)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${padL - 6}" y="${yFor(t) + 3}" text-anchor="end" font-size="8" fill="var(--text-faint)">${t}%</text>
+      `).join('');
+      const actualPts = h.points.map((v, i) => [xFor(i), yFor(v)]);
+      const actualLine = actualPts.map(p => p.join(',')).join(' ');
+      const actualMarkers = actualPts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4" fill="${c.color}" stroke="var(--panel-bg)" stroke-width="2"/>`).join('');
+      const predX = xFor(allLabels.length - 1), predY = yFor(c.predictedPct);
+      const lastActual = actualPts[actualPts.length - 1];
+      const predictedBand = `x="${lastActual[0]}" y="${padT}" width="${predX - lastActual[0]}" height="${plotH}"`;
+      const stripeDefs = `
+        <pattern id="predStripesHub" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="${c.color}" fill-opacity="0.08"/>
+          <line x1="0" y1="0" x2="0" y2="6" stroke="${c.color}" stroke-width="2.2"/>
+        </pattern>
+      `;
+      const xLabels = allLabels.map((lab, i) => `<text x="${xFor(i)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="var(--text-faint)">${lab === 'Predicted' ? 'Pred.' : lab}</text>`).join('');
+      return `
+        <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Line chart of ${c.name} assignment scores trending toward a predicted grade of ${c.predictedPct} percent">
+          <defs>${stripeDefs}</defs>
+          ${gridlines}
+          <rect ${predictedBand} fill="url(#predStripesHub)" stroke="none"/>
+          <polyline points="${actualLine}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="${lastActual[0]}" y1="${lastActual[1]}" x2="${predX}" y2="${predY}" stroke="${c.color}" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>
+          ${actualMarkers}
+          <circle cx="${predX}" cy="${predY}" r="4.5" fill="var(--panel-bg)" stroke="${c.color}" stroke-width="2"/>
+          <text x="${predX}" y="${predY - 10}" text-anchor="end" font-size="8.5" font-weight="800" fill="var(--text-dark)">${c.predictedPct}%</text>
+          ${xLabels}
+        </svg>
+      `;
+    }
+    function renderGradePopup(c) {
+      const h = HISTORY[c.id];
+      const first = h.points[0], lastGraded = h.points[h.points.length - 1];
+      return `
+        <h3>${c.name}</h3>
+        <p class="popup-sub">${TREND_WORD[c.trend]}: <strong>${first}% → ${lastGraded}%</strong> over the last ${h.points.length} graded assignments, predicting <strong>${c.predictedPct}%</strong> (${c.predicted}).</p>
+        ${buildGradeChartSVG(c)}
+        <p class="popup-foot">Predicted grade extrapolates this trend — not a copy of the current grade.</p>
+      `;
+    }
+    const gradePopup = document.getElementById('gradePopup');
+    const predBlock = document.getElementById('predBlock');
+    let popupHideTimer = null;
+    function showGradePopup() {
+      clearTimeout(popupHideTimer);
+      gradePopup.innerHTML = renderGradePopup(course);
+      gradePopup.classList.add('show');
+      predBlock.setAttribute('aria-expanded', 'true');
+      const rect = predBlock.getBoundingClientRect();
+      const popupRect = gradePopup.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - popupRect.width / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - popupRect.width - 10));
+      let top = rect.top - popupRect.height - 10;
+      if (top < 10) top = rect.bottom + 10;
+      gradePopup.style.left = `${left}px`;
+      gradePopup.style.top = `${top}px`;
+    }
+    function hideGradePopup() { gradePopup.classList.remove('show'); predBlock.setAttribute('aria-expanded', 'false'); }
+    predBlock.addEventListener('mouseenter', showGradePopup);
+    predBlock.addEventListener('focus', showGradePopup);
+    predBlock.addEventListener('mouseleave', () => { popupHideTimer = setTimeout(hideGradePopup, 80); });
+    predBlock.addEventListener('blur', hideGradePopup);
+    predBlock.addEventListener('keydown', e => { if (e.key === 'Escape') { hideGradePopup(); predBlock.blur(); } });
+
+    // ------------------------------------------------------------------
+    // Upcoming Calendar — a real month grid, built from Date objects
+    // rather than a hand-typed layout so the weekday-per-day-number can
+    // never drift out of sync with the due dates above. Only Overdue/
+    // Upcoming days get a dot (not graded days) — this card is about
+    // what's still ahead, same as the wireframe's "Upcoming Calendar"
+    // label. Today (Aug 24, 2026 — the same mock "today" home.html's
+    // Today card uses) gets a ring; clicking any day updates the info
+    // panel underneath.
+    //
+    // Back/forward month navigation (added 2026-08-26, per Martin's
+    // request to browse past/future events): the grid starts on August
+    // 2026 (the month every sample due-date string in the app already
+    // assumes) but `calYear`/`calMonthIdx` can move independently —
+    // renderCalendar() rebuilds the grid for whatever month is current,
+    // and the "today" ring / due-date dots only ever apply when that's
+    // actually August 2026, since that's the only month the sample
+    // data covers. Browsing to another month just shows an empty
+    // month, same as a real calendar with nothing scheduled yet.
+    // ------------------------------------------------------------------
+    const TODAY_DAY = 24, TODAY_MONTH = 7, TODAY_YEAR = 2026; // Aug 24, 2026
+    const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const dueDays = new Map(); // day -> [{title, type, status}] — all within August 2026
+    overdueItems.concat(upcomingItems).forEach(i => {
+      if (!dueDays.has(i.day)) dueDays.set(i.day, []);
+      dueDays.get(i.day).push(i);
+    });
+
+    let calYear = TODAY_YEAR, calMonthIdx = TODAY_MONTH;
+    const calGrid = document.getElementById('calGrid');
+    const calMonthLabel = document.getElementById('calMonthLabel');
+
+    function renderCalendar() {
+      const firstWeekday = new Date(calYear, calMonthIdx, 1).getDay();
+      const daysInMonth = new Date(calYear, calMonthIdx + 1, 0).getDate();
+      const isSampleMonth = calYear === TODAY_YEAR && calMonthIdx === TODAY_MONTH;
+      calMonthLabel.textContent = `${MONTH_NAMES[calMonthIdx]} ${calYear}`;
+      let calHTML = DOW.map(d => `<div class="cal-dow">${d[0]}</div>`).join('');
+      for (let i = 0; i < firstWeekday; i++) calHTML += '<div class="cal-day pad"></div>';
+      for (let d = 1; d <= daysInMonth; d++) {
+        const isToday = isSampleMonth && d === TODAY_DAY;
+        const hasDue = isSampleMonth && dueDays.has(d);
+        calHTML += `<button class="cal-day${isToday ? ' today' : ''}" type="button" data-day="${d}">${d}${hasDue ? '<span class="dot"></span>' : ''}</button>`;
+      }
+      calGrid.innerHTML = calHTML;
+    }
+
+    function selectDay(day) {
+      document.querySelectorAll('.cal-day').forEach(el => el.classList.toggle('selected', Number(el.dataset.day) === day));
+      const d = new Date(calYear, calMonthIdx, day);
+      document.getElementById('calSelDate').textContent = `${DOW[d.getDay()]}, ${MONTH_NAMES[calMonthIdx]} ${day}`;
+      const isSampleMonth = calYear === TODAY_YEAR && calMonthIdx === TODAY_MONTH;
+      const items = isSampleMonth ? (dueDays.get(day) || []) : [];
+      const box = document.getElementById('calSelItems');
+      box.innerHTML = items.length
+        ? items.map(i => `<div class="cal-selected-item"><span class="type">${TYPE_LABEL[i.type]}</span><span class="name">${i.title}</span></div>`).join('')
+        : '<p class="cal-selected-empty">Nothing due this day.</p>';
+    }
+    calGrid.addEventListener('click', e => {
+      const btn = e.target.closest('.cal-day:not(.pad)');
+      if (!btn) return;
+      selectDay(Number(btn.dataset.day));
+    });
+    function goToMonth(delta) {
+      calMonthIdx += delta;
+      if (calMonthIdx < 0) { calMonthIdx = 11; calYear--; }
+      else if (calMonthIdx > 11) { calMonthIdx = 0; calYear++; }
+      renderCalendar();
+      document.getElementById('calSelDate').textContent = '';
+      document.getElementById('calSelItems').innerHTML = '<p class="cal-selected-empty">Pick a day to see what’s due.</p>';
+    }
+    document.getElementById('calPrevBtn').addEventListener('click', () => goToMonth(-1));
+    document.getElementById('calNextBtn').addEventListener('click', () => goToMonth(1));
+
+    renderCalendar();
+    selectDay(TODAY_DAY);
+
+    // ------------------------------------------------------------------
+    // Course info pop-out — the "course info pop-out (shows course
+    // info, darkens rest of page)" line from site-map.md's Course-page
+    // spec, which the draft PDF itself didn't sketch but the site map
+    // already calls for.
+    // ------------------------------------------------------------------
+    const infoModal = document.getElementById('infoModal');
+    const modalNameInput = document.getElementById('modalCourseName');
+    modalNameInput.value = course.name;
+    // Live-renames the course everywhere its name shows on this page —
+    // banner, hub title, and tab title — same "propagate on every
+    // keystroke" convention as the color swatch above. An empty box
+    // (mid-edit, before the user's typed anything) is left as-is
+    // everywhere else rather than blanking those out.
+    modalNameInput.addEventListener('input', () => {
+      const name = modalNameInput.value;
+      if (!name) return;
+      course.name = name;
+      document.getElementById('hubTitle').textContent = `Your ${name} Hub`;
+      document.getElementById('bannerName').textContent = name;
+      document.title = `Schoolagy — ${name} Hub`;
+    });
+    document.getElementById('modalCode').textContent = course.code;
+    document.getElementById('modalTeacher').textContent = course.teacher;
+    document.getElementById('modalPeriod').textContent = course.period;
+    document.getElementById('modalSection').textContent = course.section;
+    document.getElementById('modalGrade').textContent = `${course.grade} (${course.pct}%)`;
+    document.getElementById('modalDesc').textContent = course.desc;
+    const modalColorBtn = document.getElementById('modalColorBtn');
+    const modalColorPopup = document.getElementById('modalColorPopup');
+    modalColorBtn.style.background = course.color;
+    initColorSwatchPopup(modalColorBtn, modalColorPopup, hex => applyCourseColor(hex));
+    function openInfoModal() { infoModal.classList.add('show'); document.getElementById('modalCloseBtn').focus(); }
+    function closeInfoModal() { infoModal.classList.remove('show'); document.getElementById('infoBtn').focus(); }
+    document.getElementById('infoBtn').addEventListener('click', openInfoModal);
+    document.getElementById('modalCloseBtn').addEventListener('click', closeInfoModal);
+    infoModal.addEventListener('click', e => { if (e.target === infoModal) closeInfoModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && infoModal.classList.contains('show')) closeInfoModal(); });
+
+    // ------------------------------------------------------------------
+    // Course sub-nav (Home/Materials/Gradebook) — Materials has a real
+    // page (course-materials.html, 2026-08-26, built from Martin's own
+    // Finder-style draft), and Gradebook now does too (gradebook.html,
+    // 2026-08-31, built from Martin's Gradebook.pdf draft) — both use
+    // the same data-href="…"?course={id} pattern below. The Updates item
+    // that used to sit here was removed 2026-08-28 per Martin's request —
+    // see architecture-decisions.md.
+    // ------------------------------------------------------------------
+    document.querySelectorAll('.course-nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.href) { window.location.href = `${item.dataset.href}?course=${course.id}`; return; }
+        document.querySelectorAll('.course-nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Bottom app nav — permanently visible (2026-08-26, per Martin's
+    // request; previously hidden by default and revealed by an
+    // up-arrow tab). Home/Courses are real links since both pages
+    // exist; the rest stay visual-only, matching home.html/courses.html.
+    // ------------------------------------------------------------------
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as home.html/courses.html.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>
