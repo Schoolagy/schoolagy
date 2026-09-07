@@ -92,6 +92,21 @@ for (const file of pageFiles) {
     continue;
   }
 
+  // Body markup must not contain stylesheet text. onboarding.html and
+  // settings.html each have a CSS comment containing the literal string
+  // "<body>", which a naive regex matched as the real tag — so the extracted
+  // markup began mid-stylesheet and rendered tens of KB of CSS onto the page
+  // as visible text. Cheap to check, catastrophic to miss.
+  const cssLeak = [
+    /!important\s*[;}]/,
+    /@media\s*\(/,
+    /\bbody\.[a-z-]+\s*\{/,
+  ].find((re) => re.test(body));
+  if (cssLeak) {
+    fail(`${rel}: stylesheet text leaked into the body markup (matched ${cssLeak})`);
+    continue;
+  }
+
   // No page should still be pointing at a bare .html file; those links would
   // 404 now that each page is a route.
   const staleLinks = [...script.matchAll(/["'`]([a-z0-9-]+\.html)/gi)].map((m) => m[1]);

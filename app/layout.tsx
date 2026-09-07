@@ -19,7 +19,35 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+      <head>
+        {/*
+          Puffin, via Adobe Fonts. Every page's CSS asks for
+          `font-family: "puffin", ...`, but the stylesheet that actually
+          DEFINES that face lives in a <link> in each source page's <head> —
+          and the port script only extracts <style>, <body> and <script>. So
+          without this line the whole app silently falls back to system sans
+          and none of the type looks right.
+
+          It sits here rather than per-page on purpose: one <link> for the
+          whole app means the font is fetched once and is warm in cache for
+          every subsequent route.
+        */}
+        <link rel="stylesheet" href="https://use.typekit.net/gsk6off.css" />
+      </head>
+      {/*
+        No inline style on <body>, deliberately.
+
+        It previously carried style={{ margin: 0, padding: 0 }} as a reset —
+        but an inline style beats a stylesheet rule, so that silently
+        overrode every page's own `body { padding: 40px 24px 100px }`. The
+        visible effect was content jammed against the top of the window and
+        running underneath the fixed bottom nav, on every page.
+
+        The reset isn't needed anyway: all 15 pages set `margin: 0` on
+        html/body themselves (verified), so letting their CSS own the body box
+        is both correct and less code.
+      */}
+      <body>{children}</body>
     </html>
   );
 }

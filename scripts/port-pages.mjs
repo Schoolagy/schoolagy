@@ -78,12 +78,49 @@ function assertReplaced(before, after, label, file) {
   return after;
 }
 
+/**
+ * Replaces every <style>/<script> region with same-length filler, so index
+ * positions still line up with the original string but nothing inside those
+ * blocks can be mistaken for markup.
+ *
+ * This exists because of a real bug: onboarding.html and settings.html each
+ * contain a CSS comment with the literal text "<body>" in it —
+ *
+ *     transition/animation on the page. Applied on <body> so it covers
+ *
+ * — and a plain /<body[^>]*>/ match found THAT first. The extracted "body"
+ * then began in the middle of the stylesheet, which dumped the rest of the CSS
+ * onto the page as visible text and left the real markup malformed. Masking
+ * first means <body> is only ever found where it's actually a tag.
+ */
+function maskEmbeddedBlocks(html) {
+  return html.replace(
+    /<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi,
+    (block) => " ".repeat(block.length)
+  );
+}
+
 function extract(srcPath) {
   const html = fs.readFileSync(srcPath, "utf8");
   const styles = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
   const scripts = [...html.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const body = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+
+  // Find the real <body>/</body> boundaries against the masked copy, then slice
+  // the ORIGINAL at those offsets so the markup itself is untouched.
+  const masked = maskEmbeddedBlocks(html);
+  const open = masked.match(/<body[^>]*>/i);
+  const closeIndex = masked.search(/<\/body>/i);
+
+  let body = "";
+  if (open && closeIndex !== -1) {
+    const start = open.index + open[0].length;
+    body = html.slice(start, closeIndex);
+  } else {
+    throw new TransformError(
+      `Could not locate <body> in ${path.basename(srcPath)} — the page may be malformed.`
+    );
+  }
 
   return {
     title: title ? title[1].trim() : path.basename(srcPath),
@@ -92,7 +129,7 @@ function extract(srcPath) {
     // separately and re-injected as a real executable script by LegacyPage.
     // Leaving it inline would put an inert duplicate of the whole (sometimes
     // 300KB) script into the DOM as text.
-    body: body ? body[1].replace(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi, "") : "",
+    body: body.replace(/<script(?![^>]*src=)[^>]*>[\s\S]*?<\/script>/gi, ""),
     script: scripts.join("\n\n"),
   };
 }
@@ -315,7 +352,7 @@ function generatePage(name, route, data) {
 
   const loginExtras = isLogin
     ? `
-import { enterMockMode, getMode, signIn } from "./lib/schoolagy";
+import { getSession, signIn } from "./lib/schoolagy";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: "That API key and secret didn't work. Double-check you copied both from your school's Schoology /api page.",
@@ -330,16 +367,16 @@ const ERROR_MESSAGES: Record<string, string> = {
   const loginEffect = isLogin
     ? `
   useEffect(() => {
-    // Escape drops into mock mode — a fully usable demo of the whole app on
-    // sample data, for beta testers who don't have a Schoology key.
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      enterMockMode();
-      window.location.href = "/onboard";
-    }
-    window.addEventListener("keydown", onKeyDown);
+    // NOTE: there is deliberately no keyboard shortcut here any more.
+    //
+    // Escape used to drop straight into sample-data mode by setting a
+    // localStorage flag. That made the demo reachable to anyone who knew the
+    // key, and — worse — made every app page reachable by editing browser
+    // storage or just typing a URL. Demo mode is now a real sign-in
+    // ("demo" as both the key and the secret) that the API grants, so the
+    // server decides who gets in and there is nothing local to forge.
 
-    // The legacy login script calls this; it must exist before that script runs.
+    // The legacy login script calls this; it must exist before that runs.
     (window as any).__schoolagySignIn = async (key: string, secret: string) => {
       const result = await signIn(key, secret);
       if (result.ok) {
@@ -347,8 +384,9 @@ const ERROR_MESSAGES: Record<string, string> = {
         try {
           onboarded = window.localStorage.getItem("schoolagy_onboarded") === "1";
         } catch {}
-        // Returning users skip setup; first-time users get onboarding.
-        return { ok: true, next: onboarded ? "/home" : "/onboard" };
+        // Demo always starts at onboarding so a tester sees the whole flow;
+        // a returning real user skips straight to Home.
+        return { ok: true, next: result.demo || !onboarded ? "/onboard" : "/home" };
       }
       return {
         ok: false,
@@ -356,17 +394,17 @@ const ERROR_MESSAGES: Record<string, string> = {
       };
     };
 
-    // Already signed in (or mid-demo)? Don't make them sign in again.
-    const mode = getMode();
-    if (mode !== "signed-out") {
+    // Already signed in? Don't make them do it again.
+    let cancelled = false;
+    getSession().then((session) => {
+      if (cancelled || session.mode === "out") return;
       let onboarded = false;
       try {
         onboarded = window.localStorage.getItem("schoolagy_onboarded") === "1";
       } catch {}
       window.location.href = onboarded ? "/home" : "/onboard";
-    }
-
-    return () => window.removeEventListener("keydown", onKeyDown);
+    });
+    return () => { cancelled = true; };
   }, []);
 `
     : "";

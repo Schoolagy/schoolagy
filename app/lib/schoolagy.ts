@@ -3,108 +3,112 @@
  *
  * Schoolagy runs in one of three states:
  *
- *   "live"       — signed in with a real Schoology personal API key. Pages
- *                  render the student's actual courses, grades and assignments,
- *                  fetched through api.schoolagy.io (which does the OAuth
- *                  signing; the secret never reaches this code).
- *   "mock"       — beta/demo mode, entered by pressing Escape on the login
- *                  screen. Every page runs on its own built-in sample data, so
- *                  a tester with no Schoology account can use the whole app.
- *   "signed-out" — neither. Pages other than login bounce back to login.
+ *   "live" — signed in with a real Schoology personal API key. Pages render
+ *            the student's actual courses, grades and assignments.
+ *   "demo" — signed in with "demo" as both the key and the secret. Every page
+ *            runs on its own built-in sample data, so a beta tester with no
+ *            Schoology account can use the whole app.
+ *   "out"  — not signed in. App pages bounce back to the login screen.
  *
- * Mock mode is deliberately not a stripped-down preview: it's the same pages,
- * the same components, the same interactions — only the data source differs.
+ * IMPORTANT: the server decides which of those you are, not the browser.
+ *
+ * An earlier version kept the mode in localStorage and let Escape on the login
+ * screen set it, which meant anyone could type a URL or edit browser storage
+ * and walk straight into any page. Now the only way in is a session cookie
+ * issued by api.schoolagy.io after it accepted your credentials — httpOnly, so
+ * page JS can't read or forge it — and every page asks the API who you are
+ * before it renders anything.
  */
 
-export type Mode = "live" | "mock" | "signed-out";
+export type Mode = "live" | "demo" | "out";
 
-const MOCK_FLAG = "schoolagy_mock_mode";
-const SIGNED_IN_FLAG = "schoolagy_signed_in";
+/** Short-lived cache of the API's answer, so navigating doesn't re-ask every time. */
+const SESSION_CACHE = "schoolagy_session_state";
+const SESSION_CACHE_MS = 60 * 1000;
+
 const BUNDLE_CACHE = "schoolagy_bundle_cache";
 
-/**
- * The session cookie itself is httpOnly (deliberately — it holds the sealed
- * Schoology credentials and must be unreadable to JS, including ours). So this
- * flag is only a hint that we *believe* we're signed in; the API is the
- * authority, and a 401 from it clears the hint.
- */
 export const API_BASE =
   typeof window !== "undefined" &&
   window.location.hostname.endsWith("schoolagy.io")
     ? "https://api.schoolagy.io"
     : "http://localhost:8787";
 
-function safeGet(key: string): string | null {
+function cacheGet(key: string): string | null {
   try {
-    return window.localStorage.getItem(key);
+    return window.sessionStorage.getItem(key);
   } catch {
-    // Private browsing / blocked storage — treat as absent rather than throwing
-    // and taking the whole page down with it.
     return null;
   }
 }
-
-function safeSet(key: string, value: string): void {
+function cacheSet(key: string, value: string): void {
   try {
-    window.localStorage.setItem(key, value);
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    /* private browsing — we just re-ask the API each time */
+  }
+}
+function cacheClear(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key);
   } catch {
     /* non-fatal */
   }
 }
 
-function safeRemove(key: string): void {
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    /* non-fatal */
+export interface SessionState {
+  mode: Mode;
+  name?: string;
+}
+
+/**
+ * Asks the API who this visitor is.
+ *
+ * This is the authorization check for the whole app. The cache below is only a
+ * latency optimization with a one-minute life — it can make a page render a
+ * moment sooner, never let someone in who shouldn't be. Anything that gets a
+ * 401 from the API clears it immediately.
+ */
+export async function getSession(): Promise<SessionState> {
+  const cached = cacheGet(SESSION_CACHE);
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.at < SESSION_CACHE_MS) {
+        return parsed.state as SessionState;
+      }
+    } catch {
+      cacheClear(SESSION_CACHE);
+    }
   }
-}
 
-export function getMode(): Mode {
-  if (typeof window === "undefined") return "signed-out";
-  if (safeGet(SIGNED_IN_FLAG) === "1") return "live";
-  if (safeGet(MOCK_FLAG) === "1") return "mock";
-  return "signed-out";
-}
-
-export function enterMockMode(): void {
-  safeSet(MOCK_FLAG, "1");
-  safeRemove(SIGNED_IN_FLAG);
-}
-
-export function markSignedIn(): void {
-  safeSet(SIGNED_IN_FLAG, "1");
-  safeRemove(MOCK_FLAG);
-}
-
-export async function signOut(): Promise<void> {
-  safeRemove(SIGNED_IN_FLAG);
-  safeRemove(MOCK_FLAG);
-  safeRemove(BUNDLE_CACHE);
+  let state: SessionState = { mode: "out" };
   try {
-    await fetch(`${API_BASE}/auth/session`, {
-      method: "DELETE",
-      credentials: "include",
-    });
+    const response = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+    if (response.ok) {
+      const data = (await response.json()) as any;
+      state = { mode: data?.demo ? "demo" : "live", name: data?.name };
+    }
   } catch {
-    // Network failure on sign-out still signs you out locally — the local
-    // flags are already cleared above, and the cookie expires on its own.
+    // Network failure is not authorization. Treat it as signed-out rather than
+    // letting someone in because the API happened to be unreachable.
+    state = { mode: "out" };
   }
+
+  cacheSet(SESSION_CACHE, JSON.stringify({ at: Date.now(), state }));
+  return state;
 }
 
 export interface SignInResult {
   ok: boolean;
-  /** Machine-readable reason, present when ok is false. */
   error?: string;
-  user?: {
-    uid: string;
-    name: string;
-    firstName: string;
-    email: string;
-    pictureUrl: string;
-  };
+  demo?: boolean;
 }
 
+/**
+ * Signs in with a Schoology personal API key — or with "demo"/"demo", which is
+ * the one and only way into sample-data mode.
+ */
 export async function signIn(key: string, secret: string): Promise<SignInResult> {
   try {
     const response = await fetch(`${API_BASE}/auth/session`, {
@@ -117,15 +121,31 @@ export async function signIn(key: string, secret: string): Promise<SignInResult>
     if (!response.ok) {
       return { ok: false, error: data?.error ?? `http_${response.status}` };
     }
-    markSignedIn();
-    return { ok: true, user: data.user };
+    // A fresh sign-in invalidates whatever we thought before.
+    cacheClear(SESSION_CACHE);
+    cacheClear(BUNDLE_CACHE);
+    return { ok: true, demo: !!data?.demo };
   } catch {
     return { ok: false, error: "network_error" };
   }
 }
 
+export async function signOut(): Promise<void> {
+  cacheClear(SESSION_CACHE);
+  cacheClear(BUNDLE_CACHE);
+  try {
+    await fetch(`${API_BASE}/auth/session`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+    /* the cookie expires on its own; local caches are already cleared */
+  }
+}
+
 export interface Bundle {
   generatedAt?: string;
+  demo?: boolean;
   COURSES?: unknown[];
   HISTORY?: Record<string, unknown>;
   OVERDUE?: unknown[];
@@ -135,52 +155,39 @@ export interface Bundle {
 }
 
 /**
- * Fetches the adapted data bundle for live mode.
+ * Fetches the adapted data bundle.
  *
- * Returns null in mock/signed-out mode, which is the signal for pages to fall
- * back to their own built-in sample data. A cached copy is served immediately
- * on repeat navigations so moving between pages doesn't re-hit Schoology every
- * time, then refreshed in the background.
+ * In demo mode the API returns an empty bundle on purpose, which is the signal
+ * for each page to fall through to the sample data in its own markup.
  */
 export async function loadBundle(): Promise<Bundle | null> {
-  if (getMode() !== "live") return null;
-
-  const cached = safeGet(BUNDLE_CACHE);
-  let cachedBundle: Bundle | null = null;
+  const cached = cacheGet(BUNDLE_CACHE);
   if (cached) {
     try {
       const parsed = JSON.parse(cached);
-      // Five minutes: fresh enough that a newly-posted grade shows up quickly,
-      // long enough that clicking through four pages is one fetch, not four.
-      if (Date.now() - parsed.__at < 5 * 60 * 1000) {
-        cachedBundle = parsed.bundle as Bundle;
-      }
+      if (Date.now() - parsed.at < 5 * 60 * 1000) return parsed.bundle as Bundle;
     } catch {
-      safeRemove(BUNDLE_CACHE);
+      cacheClear(BUNDLE_CACHE);
     }
   }
-  if (cachedBundle) return cachedBundle;
 
   try {
-    const response = await fetch(`${API_BASE}/data/bundle`, {
-      credentials: "include",
-    });
+    const response = await fetch(`${API_BASE}/data/bundle`, { credentials: "include" });
     if (response.status === 401) {
-      // Session expired or revoked — drop the hint so the guard sends the user
-      // back to sign in rather than rendering an empty app.
-      safeRemove(SIGNED_IN_FLAG);
+      // Session died underneath us — drop the cached "you're signed in" answer
+      // so the next guard check sends them back to sign in.
+      cacheClear(SESSION_CACHE);
       return null;
     }
     if (!response.ok) return null;
     const bundle = (await response.json()) as Bundle;
-    safeSet(BUNDLE_CACHE, JSON.stringify({ __at: Date.now(), bundle }));
+    cacheSet(BUNDLE_CACHE, JSON.stringify({ at: Date.now(), bundle }));
     return bundle;
   } catch {
     return null;
   }
 }
 
-/** Wipes the cached bundle so the next load refetches. */
 export function invalidateBundle(): void {
-  safeRemove(BUNDLE_CACHE);
+  cacheClear(BUNDLE_CACHE);
 }

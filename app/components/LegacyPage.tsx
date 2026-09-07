@@ -1,30 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getMode, loadBundle, signOut, type Mode } from "../lib/schoolagy";
+import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
 
 /**
  * Renders one of Schoolagy's self-contained HTML/CSS/JS pages inside a real
- * Next.js route, and wires it to real data, image screening and auth.
+ * Next.js route, and wires it to auth, real data and image screening.
  *
- * Why the pages aren't rewritten as React components: each one (login,
- * onboarding, home, messages, settings, ...) is an already-built, already-
- * tested document with its own globals, element ids and inline script, and the
- * behavior in them is documented in detail in architecture-decisions.md.
- * Rewriting them idiomatically would risk regressing months of tuned behavior
- * for no functional gain. So each page's original style/markup/script is
- * extracted at build time and injected here as-is:
+ * Why the pages aren't rewritten as React components: each one is already
+ * built, tested and documented in detail, with its own globals, element ids
+ * and inline script. Rewriting them idiomatically would risk regressing a lot
+ * of tuned behavior for nothing the user would notice. So each page's original
+ * style/markup/script is extracted at build time and injected here as-is.
  *
- *   - markup goes in via dangerouslySetInnerHTML
- *   - the original script is re-run through a real <script> element, because
- *     scripts inserted via innerHTML never execute (per the HTML spec)
+ * Two ordering rules make that work:
  *
- * The important ordering rule: everything the legacy script depends on —
- * `window.__SCHOOLAGY__` (real data) and `window.__schoolagyScanImage` (the
- * NSFW check) — must exist BEFORE that script runs, since it reads them
- * synchronously at top level. That's why the script injection waits on the
- * data fetch instead of racing it.
+ *   1. NOTHING renders until the API has confirmed this visitor may see it.
+ *      The page's markup is not painted for a signed-out visitor at all — no
+ *      flash of content, and no way to see a page by typing its URL.
+ *   2. `window.__SCHOOLAGY__` (real data) and `window.__schoolagyScanImage`
+ *      (the NSFW check) exist BEFORE the page's script runs, since it reads
+ *      them synchronously at top level.
  */
 export default function LegacyPage({
   title,
@@ -44,13 +41,19 @@ export default function LegacyPage({
    * Whether this page can upload images (onboarding and settings can).
    * Only those pages warm the NSFW model — TensorFlow.js plus the weights is
    * several megabytes, and pulling that onto a page with no file input would
-   * be pure waste on every navigation.
+   * be waste on every navigation.
    */
   hasUploads?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<Mode>("signed-out");
+
+  /**
+   * "checking" until the API answers. The page's markup only mounts once this
+   * is "ready", so a signed-out visitor never gets a paint of a protected page
+   * — which is also why there's no half-rendered flash on a slow connection.
+   */
+  const [phase, setPhase] = useState<"checking" | "ready">("checking");
+  const [mode, setMode] = useState<Mode>("out");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
@@ -61,32 +64,31 @@ export default function LegacyPage({
     let cancelled = false;
 
     (async () => {
-      const currentMode = getMode();
+      // The server is the authority on who this is — not localStorage, which
+      // anyone could edit.
+      const session = await getSession();
+      if (cancelled) return;
 
-      if (requiresAuth && currentMode === "signed-out") {
-        // Nothing to render for a signed-out visitor on an app page — send
-        // them to sign in rather than flashing an empty shell first.
+      if (requiresAuth && session.mode === "out") {
         window.location.href = "/";
         return;
       }
 
-      // Cheap: just puts the scan function on window for the legacy upload
-      // gate to call. The heavy model load happens on first actual use.
       installNsfwGlobal();
 
-      // In live mode this returns the student's real data mapped into the
-      // exact shapes the page already renders; in mock mode it returns null
-      // and the page falls back to its own built-in sample data.
-      const bundle = await loadBundle();
+      // Live mode returns the student's real data mapped into the shapes the
+      // page renders; demo mode returns an empty bundle so each page falls
+      // through to its own sample data.
+      const bundle = requiresAuth ? await loadBundle() : null;
       if (cancelled) return;
 
       (window as any).__SCHOOLAGY__ = {
-        mode: currentMode,
+        mode: session.mode,
         data: bundle ?? {},
       };
 
-      setMode(currentMode);
-      setReady(true);
+      setMode(session.mode);
+      setPhase("ready");
     })();
 
     return () => {
@@ -98,10 +100,8 @@ export default function LegacyPage({
    * Sign-out, wired once for the whole app.
    *
    * Home and Settings both already render `[data-action="signout"]` buttons
-   * that were never connected to anything — clicking one just closed the menu.
-   * A single delegated listener covers both (and any future page that adds the
-   * same button) without editing page markup, and it's what lets a beta tester
-   * leave demo mode: without it, pressing Escape once would strand them in it.
+   * that were never connected to anything. One delegated listener covers both
+   * (and any future page with the same button) without editing page markup.
    */
   useEffect(() => {
     async function onClick(event: MouseEvent) {
@@ -119,15 +119,14 @@ export default function LegacyPage({
   }, []);
 
   useEffect(() => {
-    if (!ready || !containerRef.current) return;
+    if (phase !== "ready" || !containerRef.current) return;
 
     const script = document.createElement("script");
     script.text = scriptJs;
     document.body.appendChild(script);
 
-    // Warm the model in the background, but only where an upload is actually
-    // possible — and after the page itself is interactive, so a multi-megabyte
-    // model download never competes with first paint.
+    // Warm the model only where an upload is possible, and only after the page
+    // is interactive, so a multi-megabyte download never competes with paint.
     if (hasUploads) {
       const warm = window.setTimeout(preloadNsfwModel, 1200);
       return () => {
@@ -139,15 +138,20 @@ export default function LegacyPage({
     return () => {
       script.remove();
     };
-    // Re-runs only when the page's own script changes (i.e. on navigation to a
-    // different route), not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, scriptJs, hasUploads]);
+  }, [phase, scriptJs, hasUploads]);
+
+  // Nothing at all until we know who this is. Deliberately blank rather than a
+  // spinner: these pages paint their own full-bleed background, and a spinner
+  // on a different ground flashes worse than a beat of nothing.
+  if (phase !== "ready") {
+    return <style dangerouslySetInnerHTML={{ __html: styleCss }} />;
+  }
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: styleCss }} />
-      {mode === "mock" && !bannerDismissed && (
+      {mode === "demo" && !bannerDismissed && (
         <div
           role="status"
           style={{
@@ -167,14 +171,22 @@ export default function LegacyPage({
             font: "600 11px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
             letterSpacing: "0.02em",
             boxShadow: "0 4px 14px rgba(0,0,0,0.28)",
-            pointerEvents: "auto",
           }}
         >
-          <span>Beta · demo data</span>
+          <span>Demo · sample data</span>
+          {/*
+            Closing the demo badge signs you out and returns to login, rather
+            than just hiding the label. Hiding it would leave someone in demo
+            mode with no visible indication they were in it.
+          */}
           <button
             type="button"
-            onClick={() => setBannerDismissed(true)}
-            aria-label="Hide demo data notice"
+            onClick={async () => {
+              setBannerDismissed(true);
+              await signOut();
+              window.location.href = "/";
+            }}
+            aria-label="Leave demo and return to sign in"
             style={{
               all: "unset",
               cursor: "pointer",
@@ -188,9 +200,17 @@ export default function LegacyPage({
           </button>
         </div>
       )}
+      {/*
+        display:contents is load-bearing. Every ported page styles `body` as its
+        layout container and expects its own top-level element to be body's
+        direct child. A plain <div> here became the flex item instead and
+        collapsed every page's widths; this removes the wrapper's box from the
+        layout tree entirely. The element still exists, so the ref works.
+      */}
       <div
         ref={containerRef}
         id="legacy-root"
+        style={{ display: "contents" }}
         dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />
     </>

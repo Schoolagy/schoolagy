@@ -57,13 +57,25 @@ live-data wiring silently does nothing.
 | Mode | How you get there | What renders |
 |---|---|---|
 | **live** | Sign in with a Schoology personal API key | The student's real courses, grades, assignments |
-| **mock** | **Press Escape on the login screen** | Every page, fully usable, on built-in sample data |
+| **demo** | Sign in with `demo` as **both** the key and the secret | Every page, fully usable, on built-in sample data |
 | signed-out | Neither | App pages bounce to the login screen |
 
-Mock mode is the beta-testing path: a tester with no Schoology account gets the
-whole app, not a cut-down demo. It's the same pages and the same interactions —
-only the data source differs. A small "Beta · demo data" badge marks it, and
-Sign out (in the profile menu, or Settings) leaves it.
+Demo mode is the beta-testing path: a tester with no Schoology account gets the
+whole app, not a cut-down demo. Same pages, same interactions — only the data
+source differs. A "Demo · sample data" badge marks it; closing that badge, or
+Sign out, returns to the login screen.
+
+### The server decides, not the browser
+
+Demo mode is a **real sign-in**: the API accepts `demo`/`demo` and issues the
+same kind of httpOnly session cookie a live login gets. Every page then asks
+`/auth/me` who you are before it renders anything.
+
+That's deliberate. An earlier version kept the mode in `localStorage` and let
+Escape on the login screen set it — which meant anyone could reach any page by
+editing browser storage or typing a URL, and pages flashed their content before
+the redirect caught up. There is now no keyboard shortcut, no local flag to
+forge, and no paint of a protected page for a signed-out visitor.
 
 ### How live data reaches the pages
 
