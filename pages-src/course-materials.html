@@ -2547,14 +2547,24 @@
           // Assignment-flagged files open their own detail page (added
           // 2026-08-29, so this page's Assignments quick-access view and
           // the app-level assignments.html both lead somewhere real);
-          // plain course-material files still just select, same as ever.
           // Quiz items (2026-09-03) route the same way — assignment.html
           // is exactly where the "taken in Schoology" redirect notice
           // already lives, so a quiz material here should land on it too
           // rather than needing its own separate destination.
+          //
+          // Fixed 2026-09-07: plain course-material files used to have no
+          // open action at all beyond selecting — a real double-click did
+          // nothing, which read as "you can't open anything in here."
+          // Quick Look already exists (right-click > Quick Look) and
+          // already handles "no preview available in this mock" cleanly,
+          // so it's what double-click/Enter open for a plain file too,
+          // instead of leaving it dead.
           if (f.assignment || f.quiz) {
             tile.addEventListener('dblclick', () => openAssignmentDetail(f));
             tile.addEventListener('keydown', e => { if (e.key === 'Enter' && renamingId !== f._id) openAssignmentDetail(f); });
+          } else {
+            tile.addEventListener('dblclick', () => openQuickLook(f, false));
+            tile.addEventListener('keydown', e => { if (e.key === 'Enter' && renamingId !== f._id) openQuickLook(f, false); });
           }
           attachDragHandlers(tile, f, false);
           grid.appendChild(tile);
@@ -2592,7 +2602,15 @@
           const kindLabel = f.quiz ? 'Quiz' : `${f.ext.toUpperCase()} Document${f.assignment ? ' · Assignment' : ''}`;
           tr.innerHTML = `<td class="name-cell"><span class="item-icon">${smallFileIconSVG(f)}</span>${nameAndEditMarkup(f)}${starBadgeMarkup(f)}</td><td class="kind-cell">${kindLabel}</td><td class="size-cell">${inAssignments ? (f.due || '—') : (f.updated || '—')}</td>`;
           tr.addEventListener('click', () => { if (renamingId !== f._id) { selectedId = f._id; render(); } });
-          if (f.assignment || f.quiz) tr.addEventListener('dblclick', () => openAssignmentDetail(f));
+          // Same fix as the grid tile above (2026-09-07): a plain file's
+          // row used to have no open action at all, only an assignment/
+          // quiz row did. Quick Look fills that gap instead of leaving it
+          // dead on double-click.
+          if (f.assignment || f.quiz) {
+            tr.addEventListener('dblclick', () => openAssignmentDetail(f));
+          } else {
+            tr.addEventListener('dblclick', () => openQuickLook(f, false));
+          }
           attachDragHandlers(tr, f, false);
           listBody.appendChild(tr);
           wireNameAndEdit(tr, f);

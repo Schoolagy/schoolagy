@@ -1269,6 +1269,15 @@
       gradesBody.innerHTML = '';
       COURSES.forEach(c => {
         const tr = document.createElement('tr');
+        // Row opens the course's own Hub page (course-home.html), same
+        // destination and role="link"/data-href convention courses.html
+        // already uses for its own rows — see the delegated click/keydown
+        // handlers below, which skip the Predicted-popup trigger the same
+        // way courses.html's courseRowNavTarget() does.
+        tr.setAttribute('role', 'link');
+        tr.tabIndex = 0;
+        tr.dataset.href = `course-home.html?course=${c.id}`;
+        tr.setAttribute('aria-label', `Open ${c.name}`);
         tr.innerHTML = `
           <td>
             <div class="course-cell">
@@ -1284,10 +1293,37 @@
       });
       bindGradePopupTriggers();
     }
+    // Delegated so re-renders (widget reorder, editor Done, etc.) don't
+    // need to re-wire anything. Ignores clicks on the Predicted-popup
+    // trigger itself so that keeps its own hover/focus behavior instead
+    // of also navigating away — same split courses.html's row handler
+    // already makes between the row and its interactive children.
+    gradesBody.addEventListener('click', e => {
+      if (widgetDragModeOn || e.target.closest('.trend')) return;
+      const row = e.target.closest('tr[data-href]');
+      if (row) window.location.href = row.dataset.href;
+    });
+    gradesBody.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (widgetDragModeOn || e.target.closest('.trend')) return;
+      const row = e.target.closest('tr[data-href]');
+      if (!row) return;
+      e.preventDefault();
+      window.location.href = row.dataset.href;
+    });
 
+    // Same course+title query string assignment.html already reads for
+    // every other entry point (assignments.html's own rows, an
+    // assignment-flagged file in course-materials.html) — see
+    // assignment.html's findAssignment()/fallback handling, which shows
+    // the real title with generic content even if a Home sample item
+    // doesn't happen to match one of assignment.html's own entries.
+    function assignmentHref(item) {
+      return `assignment.html?course=${encodeURIComponent(item.courseId)}&title=${encodeURIComponent(item.title)}`;
+    }
     function renderAssignList(container, items, overdue) {
       container.innerHTML = items.map(item => `
-        <div class="assign-item ${overdue ? 'is-overdue' : ''}">
+        <div class="assign-item ${overdue ? 'is-overdue' : ''}" role="link" tabindex="0" data-href="${assignmentHref(item)}" aria-label="${item.title}, ${courseName(item.courseId)}">
           <span class="assign-tick" style="background:${courseColor(item.courseId)}"></span>
           <div class="assign-text">
             <p class="assign-title">${item.title}</p>
@@ -1297,16 +1333,40 @@
         </div>
       `).join('');
     }
+    // Delegated on each list's parent so re-renders never need rewiring
+    // — same convention as assignments.html's own assignListBody. Bails
+    // out during widget reorder/resize mode (see widgetDragModeOn below)
+    // so grabbing a row to drag its whole widget card doesn't also fire
+    // a navigation on release.
+    function wireRowNav(container) {
+      container.addEventListener('click', e => {
+        if (widgetDragModeOn) return;
+        const row = e.target.closest('[data-href]');
+        if (row) window.location.href = row.dataset.href;
+      });
+      container.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if (widgetDragModeOn) return;
+        const row = e.target.closest('[data-href]');
+        if (!row) return;
+        e.preventDefault();
+        window.location.href = row.dataset.href;
+      });
+    }
     function renderAssignLists() {
       renderAssignList(document.getElementById('overdueList'), OVERDUE, true);
       renderAssignList(document.getElementById('upcomingList'), UPCOMING, false);
       document.getElementById('overdueCount').textContent = OVERDUE.length;
     }
+    // Wired once — delegated listeners survive renderAssignList()
+    // replacing the lists' innerHTML on every re-render.
+    wireRowNav(document.getElementById('overdueList'));
+    wireRowNav(document.getElementById('upcomingList'));
 
     const todayList = document.getElementById('todayList');
     function renderTodayList() {
       todayList.innerHTML = TODAY.map(item => `
-        <div class="today-item">
+        <div class="today-item" role="link" tabindex="0" data-href="${assignmentHref(item)}" aria-label="${item.title}, ${courseName(item.courseId)}">
           <span class="today-tick" style="background:${courseColor(item.courseId)}"></span>
           <div class="today-item-text">
             <p class="today-item-title">${item.title}</p>
@@ -1316,10 +1376,15 @@
       `).join('');
     }
 
+    // Widget preview, not a specific thread — Home's sample MESSAGES
+    // entries don't carry the same person/thread id messages.html's own
+    // sample data does, so rather than guess at a fragile deep link,
+    // every item opens the inbox itself (same destination the Messages
+    // nav tab already goes to).
     const messagesList = document.getElementById('messagesList');
     function renderMessagesWidget() {
       messagesList.innerHTML = MESSAGES.map(m => `
-        <div class="message-item">
+        <div class="message-item" role="link" tabindex="0" data-href="messages.html" aria-label="Message from ${m.from}: ${m.preview}">
           <span class="message-tick" style="background:${courseColor(m.courseId)}"></span>
           <div class="message-item-text">
             <div class="message-item-top">
@@ -1331,6 +1396,8 @@
         </div>
       `).join('');
     }
+    wireRowNav(todayList);
+    wireRowNav(messagesList);
 
     // Nav: purely visual page-switching for the preview — swaps the
     // active state, doesn't actually navigate anywhere yet.
@@ -2121,6 +2188,29 @@
     // opens/closes the menu rather than performing either action.
     // ------------------------------------------------------------------
     const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
     const profileMenu = document.getElementById('profileMenu');
 
     function openProfileMenu() {

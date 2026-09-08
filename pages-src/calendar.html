@@ -176,14 +176,30 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   /* ---------- Calendar layout: sidebar (search/filters/selected event)
      + main (toolbar + grid). Stacks to a single column on narrow
-     viewports — see the media query near the bottom. ---------- */
-  .cal-layout { display: flex; gap: 18px; align-items: flex-start; }
-  .cal-sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
-  .cal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+     viewports — see the media query near the bottom.
+
+     Fix (2026-09-07): the grid used to be a small fixed-height block
+     sitting at the top of a card that's always stretched to fill the
+     viewport (same "one card, same as every other page" convention as
+     everywhere else) — on Week view, or any Month with a light events
+     week, that left a large dead grey rectangle below the grid with
+     nothing in it, which read as the page "stretching" oddly rather
+     than the calendar just being short. Now cal-layout/cal-main/calBody
+     all flex to fill the card's real height, so the grid itself grows
+     to fill the available space (see #calBody, .cal-grid-wrap,
+     .cal-month-grid, .cal-week-grid below) instead of floating above a
+     blank area. The sidebar stays top-aligned on purpose (its content
+     — search/selected-event — has no reason to stretch). ---------- */
+  .cal-layout { display: flex; gap: 18px; align-items: stretch; flex: 1; min-height: 0; }
+  .cal-sidebar { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; align-self: flex-start; }
+  .cal-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  #calBody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
   .cal-search-wrap { position: relative; }
   .cal-search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: var(--text-faint); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
@@ -321,11 +337,19 @@
     border: 1px solid var(--border);
     border-radius: var(--window-radius-md);
     overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .cal-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .cal-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .cal-dow-cell { text-align: center; font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); padding: 8px 2px; }
 
-  .cal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  /* flex:1 + min-height:0 so the grid fills whatever's left of
+     .cal-grid-wrap; grid-auto-rows keeps each row a real day-cell height
+     as a floor (1fr lets rows share out any extra space evenly instead
+     of one giant blank margin below the last row). */
+  .cal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(84px, 1fr); flex: 1; min-height: 0; overflow-y: auto; }
   .cal-day-cell {
     min-height: 84px;
     min-width: 0; /* grid items default to min-width:auto, which lets a
@@ -380,7 +404,11 @@
   .cal-day-more:hover { color: var(--text-dark); }
 
   /* ---------- Week view ---------- */
-  .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+  /* flex:1 lets this single-row grid grow to fill .cal-grid-wrap
+     (rows default to align-content:normal, which stretches a lone row
+     to whatever height the grid ends up with) instead of stopping at
+     min-height and leaving the rest of the card empty below it. */
+  .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; min-height: 0; }
   .cal-week-cell {
     min-height: 220px;
     min-width: 0;
@@ -1134,9 +1162,29 @@
     // onboarding.html, extended with --cal-grid-bg/--cal-cell-alt so the
     // calendar surface itself flips from white to near-black (per
     // Martin, 2026-09-04) while --accent stays fixed and does the
-    // highlighting in both modes. Follows the OS setting only — no
-    // manual page-local toggle (removed 2026-09-04, per Martin).
+    // highlighting in both modes. No manual page-local toggle (removed
+    // 2026-09-04, per Martin) — this page only ever follows a setting
+    // decided elsewhere.
+    //
+    // Fixed 2026-09-07: "elsewhere" used to mean the OS's own
+    // prefers-color-scheme, checked fresh on every load with no memory
+    // of anything — so Calendar could be dark while every other page
+    // stayed light (or the reverse), independent of whatever Settings'
+    // real Dark Mode toggle was set to. Now it reads the same
+    // schoolagy_dark_mode localStorage flag Settings writes, falling
+    // back to the OS only when nothing's been explicitly chosen yet —
+    // so this page agrees with the rest of the app instead of running
+    // its own separate check.
     // ------------------------------------------------------------------
+    const SCHOOLAGY_DARK_MODE_KEY = 'schoolagy_dark_mode';
+    function schoolagySavedDarkPref() {
+      try {
+        const v = localStorage.getItem(SCHOOLAGY_DARK_MODE_KEY);
+        if (v === 'dark') return true;
+        if (v === 'light') return false;
+      } catch {}
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
     function applyDarkMode(isDark) {
       const root = document.documentElement.style;
       if (isDark) {
@@ -1162,8 +1210,12 @@
       }
       document.body.classList.toggle('dark-mode', isDark);
     }
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    applyDarkMode(prefersDark);
+    applyDarkMode(schoolagySavedDarkPref());
+    // A Settings-toggle change (or another tab) should reflect here live,
+    // since this page has no toggle of its own to re-trigger a load.
+    window.addEventListener('storage', e => {
+      if (e.key === SCHOOLAGY_DARK_MODE_KEY) applyDarkMode(schoolagySavedDarkPref());
+    });
 
     // ------------------------------------------------------------------
     // Nav — Home/Courses/Grades/Assignments/Messages/Contacts/Settings
@@ -1181,6 +1233,29 @@
     // Profile menu — same behavior as every other page.
     // ------------------------------------------------------------------
     const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
     const profileMenu = document.getElementById('profileMenu');
     function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
     function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }

@@ -1510,14 +1510,31 @@
     }
 
     if (darkModeToggle) {
-      // Default to whatever the OS is already set to, same courtesy a
-      // real dark-mode implementation would give for free via
-      // prefers-color-scheme — the slider then lets the user override it
-      // for this session either direction.
-      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      darkModeToggle.checked = prefersDark;
-      applyDarkMode(prefersDark);
-      darkModeToggle.addEventListener('change', () => applyDarkMode(darkModeToggle.checked));
+      // Shared preference (2026-09-07) — same schoolagy_dark_mode
+      // localStorage flag settings.html's real Dark Mode toggle reads
+      // and writes, so a choice made either there or here follows the
+      // user everywhere else in the app instead of each page asking the
+      // OS fresh and disagreeing with the others. Defaults to whatever
+      // the OS is already set to when nothing's been chosen yet.
+      const SCHOOLAGY_DARK_MODE_KEY = 'schoolagy_dark_mode';
+      const schoolagySavedDarkPref = () => {
+        try {
+          const v = localStorage.getItem(SCHOOLAGY_DARK_MODE_KEY);
+          if (v === 'dark') return true;
+          if (v === 'light') return false;
+        } catch {}
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      };
+      const schoolagySetDarkPref = isDark => {
+        try { localStorage.setItem(SCHOOLAGY_DARK_MODE_KEY, isDark ? 'dark' : 'light'); } catch {}
+      };
+      const initialDark = schoolagySavedDarkPref();
+      darkModeToggle.checked = initialDark;
+      applyDarkMode(initialDark);
+      darkModeToggle.addEventListener('change', () => {
+        applyDarkMode(darkModeToggle.checked);
+        schoolagySetDarkPref(darkModeToggle.checked);
+      });
     }
 
     // Swatches are plain <div>s (real background-image tiles, not just

@@ -2564,6 +2564,29 @@
     // Profile menu — same behavior as every other page.
     // ------------------------------------------------------------------
     const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
     const profileMenu = document.getElementById('profileMenu');
     function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
     function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }

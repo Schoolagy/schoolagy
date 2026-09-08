@@ -1192,11 +1192,19 @@
     </div>
   </div>
 
-  <!-- ---------- Notification Access — mock permission prompt. Real
-       browser Notification.requestPermission() didn't show anything
-       usable for this mockup, so this in-app modal stands in for it,
-       same as everything else here that would need a real OS/browser
-       API in production. ---------- -->
+  <!-- ---------- Notification Access.
+       Fixed 2026-09-07: this used to be a pure mock — clicking "Send
+       Request" just set a page-local flag, no real browser prompt ever
+       fired. That was originally because Notification.requestPermission()
+       "didn't show anything usable" during development, which tracks: the
+       API silently refuses on a non-secure origin (a file:// mockup
+       preview, or plain http://), so it looked broken when the real
+       problem was where it was being tested from. Now that this runs on
+       a real https:// origin (app.schoolagy.io), the real API works, so
+       "Send Request" calls it for real — see the notification-permission
+       JS below, which also branches this modal's copy/buttons for the
+       'denied' and 'unsupported' cases (the real API doesn't let a denied
+       origin re-prompt; there's nothing left to "send"). ---------- -->
   <div class="editor-overlay" id="notificationAccessOverlay">
     <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="notificationAccessTitle" style="max-width: 340px;">
       <div class="editor-head">
@@ -1204,7 +1212,7 @@
         <button class="editor-close" id="notificationAccessClose" type="button" aria-label="Close">&times;</button>
       </div>
       <div class="editor-body" style="padding-bottom: 16px;">
-        <p class="settings-row-desc" style="font-size: 0.86rem;">Schoolagy needs notification access to turn this on.</p>
+        <p class="settings-row-desc" id="notificationAccessBody" style="font-size: 0.86rem;">Schoolagy needs notification access to turn this on. Your browser will ask you to allow or block it.</p>
       </div>
       <div class="editor-actions">
         <button class="editor-reset" id="notificationAccessGoBack" type="button">Go Back</button>
@@ -1349,16 +1357,35 @@
     });
 
     // ------------------------------------------------------------------
-    // Dark mode toggle — same "real implementation would use
-    // prefers-color-scheme, this slider overrides it" approach as
-    // onboarding.html. Previously this only flipped a `dark-mode` class
-    // with no CSS behind it, so the switch visibly moved but nothing on
-    // the page actually changed — applyDarkMode() now re-themes the
-    // same tokens onboarding.html's own dark mode drives (panel/text/
-    // border/toggle-track), the same setProperty-on-documentElement
-    // pattern already used for --accent. Page-local only, like
-    // everything else here.
+    // Dark mode toggle — same re-theming approach as onboarding.html/
+    // calendar.html (applyDarkMode() sets the shared panel/text/border/
+    // toggle-track tokens, the same setProperty-on-documentElement
+    // pattern already used for --accent).
+    //
+    // Persistence added 2026-09-07. This used to be "page-local only" —
+    // asking the OS fresh on every load and forgetting whatever the
+    // toggle was set to — which is why turning Dark Mode on here and
+    // then navigating anywhere else (including back to Settings) lost
+    // it. SCHOOLAGY_DARK_MODE_KEY below is a small shared localStorage
+    // flag: Settings is the one page with a real toggle, so it's the
+    // one place that WRITES a preference; every page (this one,
+    // onboarding.html, calendar.html) reads it the same way on load, so
+    // "dark mode is inconsistent" — the toggle not sticking, and
+    // Calendar disagreeing with what Settings says — has one shared
+    // answer instead of each page asking the OS independently.
     // ------------------------------------------------------------------
+    const SCHOOLAGY_DARK_MODE_KEY = 'schoolagy_dark_mode';
+    function schoolagySavedDarkPref() {
+      try {
+        const v = localStorage.getItem(SCHOOLAGY_DARK_MODE_KEY);
+        if (v === 'dark') return true;
+        if (v === 'light') return false;
+      } catch {}
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    function schoolagySetDarkPref(isDark) {
+      try { localStorage.setItem(SCHOOLAGY_DARK_MODE_KEY, isDark ? 'dark' : 'light'); } catch {}
+    }
     const darkModeToggle = document.getElementById('darkModeToggle');
     function applyDarkMode(isDark) {
       const root = document.documentElement.style;
@@ -1381,10 +1408,21 @@
       }
       document.body.classList.toggle('dark-mode', isDark);
     }
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    darkModeToggle.checked = prefersDark;
-    applyDarkMode(prefersDark);
-    darkModeToggle.addEventListener('change', () => applyDarkMode(darkModeToggle.checked));
+    const initialDark = schoolagySavedDarkPref();
+    darkModeToggle.checked = initialDark;
+    applyDarkMode(initialDark);
+    darkModeToggle.addEventListener('change', () => {
+      applyDarkMode(darkModeToggle.checked);
+      schoolagySetDarkPref(darkModeToggle.checked);
+    });
+    // Another tab (or this same page, e.g. a future Onboarding revisit)
+    // changing the preference should show up here without a reload.
+    window.addEventListener('storage', e => {
+      if (e.key !== SCHOOLAGY_DARK_MODE_KEY) return;
+      const isDark = schoolagySavedDarkPref();
+      darkModeToggle.checked = isDark;
+      applyDarkMode(isDark);
+    });
 
     // ------------------------------------------------------------------
     // Potato PC Mode — same real, working toggle as onboarding.html
@@ -1794,8 +1832,31 @@
     // starts false — most schools leave email updates off, so Schoolagy
     // doesn't assume an address or trust one until it's "verified"
     // (simulated here, no real mail server behind this mockup).
+    //
+    // Persistence added 2026-09-07. This whole object used to live only
+    // in a page-local variable — reset to the hardcoded default the
+    // instant you navigated anywhere and back, which is why a photo
+    // "didn't save when you go to a diff page" and a verified email
+    // looked like it silently un-verified itself. SCHOOLAGY_PROFILE_KEY
+    // is the one shared localStorage record; this page is the only place
+    // that writes it (see saveProfileState() below, called from
+    // renderProfileCard() so every place that already re-renders the
+    // card also persists it), and every other page's topbar profile
+    // button reads it read-only to show the same photo/initial.
     // ------------------------------------------------------------------
-    const profileState = { name: 'Martin', email: '', emailVerified: false, photo: null };
+    const SCHOOLAGY_PROFILE_KEY = 'schoolagy_profile';
+    function loadProfileState() {
+      const defaults = { name: 'Martin', email: '', emailVerified: false, photo: null };
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_PROFILE_KEY);
+        if (raw) return Object.assign(defaults, JSON.parse(raw));
+      } catch {}
+      return defaults;
+    }
+    function saveProfileState() {
+      try { localStorage.setItem(SCHOOLAGY_PROFILE_KEY, JSON.stringify(profileState)); } catch {}
+    }
+    const profileState = loadProfileState();
     const profileCardName = document.getElementById('profileCardName');
     const profileCardEmail = document.getElementById('profileCardEmail');
     const profileCardAvatar = document.getElementById('profileCardAvatar');
@@ -1837,6 +1898,7 @@
       }
       renderAvatarBubble(profileCardAvatar, profileState.photo, profileState.name);
       renderAvatarBubble(profileBtn, profileState.photo, profileState.name); // top-right corner, same photo
+      saveProfileState();
     }
 
     const profileEditOverlay = document.getElementById('profileEditOverlay');
@@ -2025,28 +2087,54 @@
     });
 
     // ------------------------------------------------------------------
-    // Push notifications — off by default. The real browser
-    // Notification.requestPermission() API turned out unusable for this
-    // mockup (no visible browser prompt in a lot of setups, so toggles
-    // just silently stayed off with no explanation) — replaced with an
-    // in-app mock permission modal instead, matching how the rest of
-    // this no-backend app simulates things it can't actually do yet.
-    // mockNotificationsGranted stands in for real OS/browser permission
-    // for the rest of this page session: granted once, every push
-    // toggle can flip freely afterward with no repeat prompt.
+    // Push notifications.
+    //
+    // Fixed 2026-09-07: "Send Request" used to just flip a page-local
+    // flag — no real browser prompt ever fired, so turning a toggle on
+    // never actually asked for anything. notificationPermissionState()
+    // reads the browser's REAL, honest answer (Notification.permission:
+    // 'granted' / 'denied' / 'default', or 'unsupported' if the API
+    // doesn't exist at all here) instead of a fake in-memory flag.
+    //
+    // Important honesty check: this fixes the PERMISSION PROMPT — the
+    // part that's just a browser API call — not push delivery itself.
+    // Actually sending a notification when a grade posts needs a service
+    // worker, a push subscription stored server-side, and something on
+    // api.schoolagy.io to trigger sends — none of that exists yet. So a
+    // granted toggle here means "the browser will let Schoolagy notify
+    // you," not "grade-post notifications are wired up end to end."
     // ------------------------------------------------------------------
-    let mockNotificationsGranted = false;
     let pendingPushToggle = null;
     const pushToggles = document.querySelectorAll('.push-toggle');
     const pushPermissionNote = document.getElementById('pushPermissionNote');
     const notificationAccessOverlay = document.getElementById('notificationAccessOverlay');
+    const notificationAccessBody = document.getElementById('notificationAccessBody');
+    const notificationAccessSendRequest = document.getElementById('notificationAccessSendRequest');
+    function notificationPermissionState() {
+      if (!('Notification' in window)) return 'unsupported';
+      return Notification.permission; // 'granted' | 'denied' | 'default'
+    }
     function updatePushPermissionNote() {
-      pushPermissionNote.textContent = mockNotificationsGranted
-        ? 'Notifications are allowed for Schoolagy.io.'
-        : 'Off by default until you grant notification access — turning any of these on will ask for it.';
+      const state = notificationPermissionState();
+      pushPermissionNote.textContent =
+        state === 'granted' ? 'Notifications are allowed for Schoolagy.io.'
+        : state === 'denied' ? 'Blocked at the browser level — turning these on needs to be re-allowed in your browser/site settings first.'
+        : state === 'unsupported' ? 'This browser doesn’t support push notifications.'
+        : 'Off by default until your browser grants permission — turning any of these on will ask for it.';
     }
     function openNotificationAccessModal(toggle) {
       pendingPushToggle = toggle;
+      const state = notificationPermissionState();
+      if (state === 'denied') {
+        notificationAccessBody.textContent = 'Notifications are blocked for Schoolagy.io at the browser level, so there’s nothing to re-request here — your browser won’t show the prompt again once you’ve said no. Allow notifications for this site in your browser’s site settings, then try the toggle again.';
+        notificationAccessSendRequest.hidden = true;
+      } else if (state === 'unsupported') {
+        notificationAccessBody.textContent = 'This browser doesn’t support push notifications, so this can’t be turned on here.';
+        notificationAccessSendRequest.hidden = true;
+      } else {
+        notificationAccessBody.textContent = 'Schoolagy needs notification access to turn this on. Your browser will ask you to allow or block it.';
+        notificationAccessSendRequest.hidden = false;
+      }
       notificationAccessOverlay.classList.add('show');
     }
     function closeNotificationAccessModal() { notificationAccessOverlay.classList.remove('show'); }
@@ -2066,18 +2154,23 @@
       pendingPushToggle = null;
       closeNotificationAccessModal();
     });
-    document.getElementById('notificationAccessSendRequest').addEventListener('click', () => {
-      mockNotificationsGranted = true;
-      if (pendingPushToggle) pendingPushToggle.checked = true;
-      pendingPushToggle = null;
-      updatePushPermissionNote();
-      closeNotificationAccessModal();
+    notificationAccessSendRequest.addEventListener('click', () => {
+      // The real browser prompt — this is a genuine permission request,
+      // not a simulation. It only resolves once the person answers it
+      // (or the browser silently denies it, e.g. no secure context).
+      Notification.requestPermission().then(permission => {
+        const granted = permission === 'granted';
+        if (pendingPushToggle) pendingPushToggle.checked = granted;
+        pendingPushToggle = null;
+        updatePushPermissionNote();
+        closeNotificationAccessModal();
+      });
     });
     pushToggles.forEach(toggle => {
       toggle.addEventListener('change', () => {
         if (!toggle.checked) return; // turning off never needs permission
-        if (mockNotificationsGranted) return; // already granted — nothing more to do
-        toggle.checked = false; // revert until the mock request resolves
+        if (notificationPermissionState() === 'granted') return; // already granted — nothing more to do
+        toggle.checked = false; // revert until the real request resolves
         openNotificationAccessModal(toggle);
       });
     });
