@@ -453,6 +453,7 @@ export default function Page() {${loginEffect}
       requiresAuth={${!isLogin}}
       hasUploads={${UPLOAD_PAGES.has(name)}}
       externalScripts={${JSON.stringify(EXTERNAL_SCRIPTS[name] || [])}}
+      pageId={${JSON.stringify(name)}}
     />
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
+import PageSkeleton from "./PageSkeleton";
 
 /**
  * Renders one of Schoolagy's self-contained HTML/CSS/JS pages inside a real
@@ -31,6 +32,7 @@ export default function LegacyPage({
   requiresAuth = true,
   hasUploads = false,
   externalScripts = [],
+  pageId,
 }: {
   title: string;
   styleCss: string;
@@ -55,6 +57,12 @@ export default function LegacyPage({
    * branch. See scripts/port-pages.mjs's EXTERNAL_SCRIPTS map.
    */
   externalScripts?: string[];
+  /**
+   * This page's key in scripts/port-pages.mjs's ROUTES (e.g. "home",
+   * "gradebook") — passed through so the "checking" phase below can show a
+   * matching skeleton instead of blank space. See PageSkeleton.tsx.
+   */
+  pageId?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -186,11 +194,20 @@ export default function LegacyPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, scriptJs, hasUploads]);
 
-  // Nothing at all until we know who this is. Deliberately blank rather than a
-  // spinner: these pages paint their own full-bleed background, and a spinner
-  // on a different ground flashes worse than a beat of nothing.
+  // A page-shaped skeleton until we know who this is — not a spinner (see
+  // PageSkeleton.tsx for why: these pages paint their own full-bleed
+  // background, and a spinner on a different ground flashes worse than a
+  // beat of nothing). The page's own <style> is already injected here so the
+  // real background/theme is in place under the skeleton from the first
+  // frame; pages with no matching skeleton (login, onboarding) still fall
+  // back to the original blank-until-ready behavior.
   if (phase !== "ready") {
-    return <style dangerouslySetInnerHTML={{ __html: styleCss }} />;
+    return (
+      <>
+        <style dangerouslySetInnerHTML={{ __html: styleCss }} />
+        <PageSkeleton id={pageId} />
+      </>
+    );
   }
 
   return (
