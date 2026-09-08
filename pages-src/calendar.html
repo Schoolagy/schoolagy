@@ -159,20 +159,30 @@
   .profile-menu-item:hover { background: var(--panel-inner); }
   .profile-menu-item.signout { color: var(--grade-bad); }
 
-  /* ---------- One card, same as every other page ---------- */
+  /* ---------- One card, mostly same as every other page — EXCEPT
+     height. Every other page's card force-stretches to fill the
+     viewport (flex: 1) because their content is naturally tall/variable.
+     Calendar's grid rows are now capped (see .cal-month-grid /
+     .cal-week-grid below), so forcing the card to full height left a
+     large empty panel below the grid on Month/Week view. Fix
+     (2026-09-08): let the card size to its own content instead
+     (flex: 0 1 auto) — it still can't overflow the viewport, because
+     .page above it keeps its own fixed, scrollable height, so a
+     genuinely tall view (Year) just scrolls the page rather than
+     stretching the card into blank space. ---------- */
   .card {
     background: var(--panel-bg);
     border-radius: var(--window-radius-lg);
     box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
     padding: 6px;
-    flex: 1;
+    flex: 0 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
   }
   .card-inner {
     padding: 20px 20px 18px;
-    flex: 1;
+    flex: 0 1 auto;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -271,6 +281,49 @@
     display: inline-block; font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
     color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 2px 8px; margin-bottom: 10px;
   }
+  /* Teacher-created events carry a "who created it" tooltip on the badge
+     (2026-09-08, per Martin). position:relative on the badge anchors the
+     absolutely-positioned .cal-tooltip; cursor:help + tabindex="0" on the
+     badge signal it's interactive and keep it reachable by keyboard, and
+     the tooltip shows on :hover/:focus-visible so it works for mouse and
+     keyboard alike. It floats above the badge (bottom: 100%) since the
+     badge sits near the top of a fairly cramped sidebar panel. */
+  .cal-selected-badge.has-tooltip { position: relative; cursor: help; }
+  .cal-tooltip {
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--text-dark);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+    white-space: nowrap;
+    border-radius: var(--window-radius-sm);
+    padding: 6px 10px;
+    box-shadow: 0 12px 30px -10px rgba(0,0,0,0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+    z-index: 20;
+  }
+  .cal-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--text-dark);
+  }
+  .cal-selected-badge.has-tooltip:hover .cal-tooltip,
+  .cal-selected-badge.has-tooltip:focus-visible .cal-tooltip {
+    opacity: 1;
+    visibility: visible;
+  }
   .cal-selected-row { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.78rem; }
   .cal-selected-row:last-of-type { border-bottom: none; }
   .cal-selected-row .k { color: var(--text-faint); font-weight: 700; }
@@ -285,7 +338,23 @@
   .cal-selected-view-btn:hover { background: var(--accent-dark); }
 
   /* ---------- Main toolbar ---------- */
-  .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  /* Fixed in place (2026-09-08, per Martin: "make it so the week month
+     year is fixed in one place") — .card-inner is the actual scrolling
+     container (see below), and this toolbar used to just be a normal
+     child of it, so it scrolled away with the grid on any view whose
+     content runs taller than the visible card (Year view especially, and
+     a tall Month). Sticking it to the top of that scroll container means
+     the Week/Month/Year switch — and Prev/Next/Today/Filters next to it —
+     stay in one place no matter how far you scroll the grid underneath.
+     Needs its own background since .card-inner has none of its own (it
+     shows .card's background through) — otherwise scrolled-past content
+     would show through behind it. */
+  .cal-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 5;
+    background: var(--panel-bg);
+    flex-shrink: 0;
+  }
   .cal-toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .cal-toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .cal-nav { display: flex; align-items: center; gap: 10px; }
@@ -809,10 +878,10 @@
       { id: 'e13', title: 'Chapter 7 Discussion', date: '2026-09-03', source: 'english10', type: 'discussion', points: 15, desc: 'Post your response to Chapter 7 and reply to two classmates.' },
       { id: 'e14', title: 'Lab Safety Refresher Quiz', date: '2026-09-04', source: 'apchem', type: 'assessment', points: 10, desc: 'Short refresher quiz before Friday’s titration lab.' },
       { id: 'e15', title: 'Fitness Log 2', date: '2026-09-04', source: 'pe', type: 'assignment', points: 10, desc: 'Log this week’s workouts and turn in your fitness journal.' },
-      { id: 'e16', title: 'Labor Day', date: '2026-09-07', source: 'school', type: 'teacher', allDay: true, desc: 'No school — district holiday.' },
+      { id: 'e16', title: 'Labor Day', date: '2026-09-07', source: 'school', type: 'teacher', allDay: true, createdBy: 'District Office', desc: 'No school — district holiday.' },
       { id: 'e17', title: 'Función de Práctica', date: '2026-09-08', source: 'spanish3', type: 'assignment', points: 15, desc: 'Practice conjugation worksheet for irregular verbs.' },
-      { id: 'e18', title: 'Progress Reports Posted', date: '2026-09-09', source: 'school', type: 'teacher', allDay: true, desc: 'Six-week progress reports are posted to PowerSchool.' },
-      { id: 'e19', title: 'Back to School Night', date: '2026-09-10', time: '6:00 PM', source: 'school', type: 'teacher', desc: 'Meet your teachers and tour the campus. Optional but encouraged.' },
+      { id: 'e18', title: 'Progress Reports Posted', date: '2026-09-09', source: 'school', type: 'teacher', allDay: true, createdBy: 'Front Office', desc: 'Six-week progress reports are posted to PowerSchool.' },
+      { id: 'e19', title: 'Back to School Night', date: '2026-09-10', time: '6:00 PM', source: 'school', type: 'teacher', createdBy: 'Dr. Simmons, Principal', desc: 'Meet your teachers and tour the campus. Optional but encouraged.' },
       { id: 'e20', title: 'Unit 2 Test', date: '2026-09-11', source: 'ushistory', type: 'assessment', points: 60, desc: 'Covers the Colonial Era through the Revolution.' },
       { id: 'e21', title: 'Problem Set 9', date: '2026-09-14', source: 'algebra2', type: 'assignment', points: 30, desc: 'Problems 1–20 from the Unit 3 packet.' },
       { id: 'e22', title: 'Lab Report #5', date: '2026-09-15', source: 'apchem', type: 'assignment', points: 50, desc: 'Write-up for the titration lab, including error analysis.' },
@@ -820,12 +889,12 @@
       { id: 'e24', title: 'Essay Final Draft', date: '2026-09-17', source: 'english10', type: 'assignment', points: 75, desc: 'Final draft of your persuasive essay, with peer feedback incorporated.' },
       { id: 'e25', title: 'Conversación Discussion', date: '2026-09-18', source: 'spanish3', type: 'discussion', points: 20, desc: 'Record a short conversation practicing this unit’s dialogue.' },
       { id: 'e26', title: 'Colonial Timeline Presentations', date: '2026-09-21', source: 'ushistory', type: 'assignment', points: 40, desc: 'Present your group’s timeline project to the class.' },
-      { id: 'e27', title: 'Picture Day', date: '2026-09-22', source: 'school', type: 'teacher', allDay: true, desc: 'Individual and class photos — check the schedule for your period.' },
+      { id: 'e27', title: 'Picture Day', date: '2026-09-22', source: 'school', type: 'teacher', allDay: true, createdBy: 'Front Office', desc: 'Individual and class photos — check the schedule for your period.' },
       { id: 'e28', title: 'Unit 3 Quiz', date: '2026-09-24', source: 'algebra2', type: 'assessment', points: 40, desc: 'Covers quadratic equations.' },
       { id: 'e29', title: 'Skills Assessment', date: '2026-09-25', source: 'pe', type: 'assessment', points: 20, desc: 'Practical skills check for this unit.' },
       { id: 'e30', title: 'Reading Journal 2', date: '2026-09-28', source: 'english10', type: 'assignment', points: 15, desc: 'Second reading journal entry for the current novel.' },
       { id: 'e31', title: 'Titration Lab', date: '2026-09-29', source: 'apchem', type: 'assignment', points: 35, desc: 'In-class titration lab — bring your pre-lab questions.' },
-      { id: 'e32', title: 'Quarter 1 Ends', date: '2026-10-02', source: 'school', type: 'teacher', allDay: true, desc: 'Last day of Quarter 1. Grades finalize at 11:59 PM.' },
+      { id: 'e32', title: 'Quarter 1 Ends', date: '2026-10-02', source: 'school', type: 'teacher', allDay: true, createdBy: 'District Office', desc: 'Last day of Quarter 1. Grades finalize at 11:59 PM.' },
     ];
 
     // ------------------------------------------------------------------
@@ -937,7 +1006,9 @@
       body.innerHTML = `
         <p class="cal-selected-title">${event.title}</p>
         <p class="cal-selected-course"><span class="dot" style="background:${src.color}"></span>${src.name}</p>
-        <span class="cal-selected-badge">${TYPE_LABEL[event.type]}</span>
+        ${event.type === 'teacher' && event.createdBy
+          ? `<span class="cal-selected-badge has-tooltip" tabindex="0">${TYPE_LABEL[event.type]}<span class="cal-tooltip" role="tooltip">Created by ${event.createdBy}</span></span>`
+          : `<span class="cal-selected-badge">${TYPE_LABEL[event.type]}</span>`}
         <div class="cal-selected-row"><span class="k">Date</span><span class="v">${dateLabel}</span></div>
         <div class="cal-selected-row"><span class="k">Time</span><span class="v">${event.allDay ? 'All day' : (event.time || 'Due 11:59 PM')}</span></div>
         ${event.points ? `<div class="cal-selected-row"><span class="k">Points</span><span class="v">${event.points} pts</span></div>` : ''}
