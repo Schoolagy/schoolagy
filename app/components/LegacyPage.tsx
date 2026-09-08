@@ -30,6 +30,7 @@ export default function LegacyPage({
   scriptJs,
   requiresAuth = true,
   hasUploads = false,
+  externalScripts = [],
 }: {
   title: string;
   styleCss: string;
@@ -44,6 +45,16 @@ export default function LegacyPage({
    * be waste on every navigation.
    */
   hasUploads?: boolean;
+  /**
+   * CDN <script src="…"> URLs this specific page's own script depends on
+   * (e.g. JSZip for course-materials' folder download). A source page's
+   * <head> can list one, but the port step only ever extracts <title>,
+   * <style> and inline <script> — an external tag like this would otherwise
+   * silently never load in the real app, with no error, just a feature that
+   * always falls back to its "can't do this without a real connection"
+   * branch. See scripts/port-pages.mjs's EXTERNAL_SCRIPTS map.
+   */
+  externalScripts?: string[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -59,6 +70,20 @@ export default function LegacyPage({
   useEffect(() => {
     document.title = title;
   }, [title]);
+
+  // Start loading any page-specific CDN dependency as early as possible —
+  // well before the user could reach whatever feature needs it (e.g.
+  // Download Folder on course-materials, which needs JSZip). Dedupe by src
+  // so this is a no-op on re-renders and never double-loads.
+  useEffect(() => {
+    for (const src of externalScripts) {
+      if (document.querySelector(`script[src="${src}"]`)) continue;
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  }, [externalScripts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +129,22 @@ export default function LegacyPage({
    * (and any future page with the same button) without editing page markup.
    */
   useEffect(() => {
+    let running = false;
+    async function runSignOut() {
+      // A page's own script may call this directly (window.__schoolagySignOut)
+      // as well as the delegated listener below reaching it through a click —
+      // guard against both firing at once.
+      if (running) return;
+      running = true;
+      try {
+        await signOut();
+      } finally {
+        window.location.href = "/";
+      }
+    }
+
+    (window as any).__schoolagySignOut = runSignOut;
+
     async function onClick(event: MouseEvent) {
       const target = (event.target as HTMLElement | null)?.closest?.(
         '[data-action="signout"]'
@@ -111,11 +152,15 @@ export default function LegacyPage({
       if (!target) return;
       event.preventDefault();
       event.stopPropagation();
-      await signOut();
-      window.location.href = "/";
+      await runSignOut();
     }
     document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      if ((window as any).__schoolagySignOut === runSignOut) {
+        delete (window as any).__schoolagySignOut;
+      }
+    };
   }, []);
 
   useEffect(() => {

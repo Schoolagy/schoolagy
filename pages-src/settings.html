@@ -943,34 +943,34 @@
                   <p class="settings-row-label">Grade Updates</p>
                   <p class="settings-row-desc">When a teacher posts or changes a grade.</p>
                 </div>
-                <label class="toggle"><input type="checkbox" class="push-toggle"><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" class="push-toggle" data-setting-key="pushGradeUpdates"><span class="track"><span class="thumb"></span></span></label>
               </div>
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">New Assignments</p>
                   <p class="settings-row-desc">When a new assignment is posted to one of your courses.</p>
                 </div>
-                <label class="toggle"><input type="checkbox" class="push-toggle"><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" class="push-toggle" data-setting-key="pushNewAssignments"><span class="track"><span class="thumb"></span></span></label>
               </div>
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">Due Date Reminders</p>
                   <p class="settings-row-desc">A heads-up the evening before something's due.</p>
                 </div>
-                <label class="toggle"><input type="checkbox" class="push-toggle"><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" class="push-toggle" data-setting-key="pushDueDateReminders"><span class="track"><span class="thumb"></span></span></label>
               </div>
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">Messages</p>
                   <p class="settings-row-desc">New messages from teachers or classmates.</p>
                 </div>
-                <label class="toggle"><input type="checkbox" class="push-toggle"><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" class="push-toggle" data-setting-key="pushMessages"><span class="track"><span class="thumb"></span></span></label>
               </div>
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">Announcements</p>
                 </div>
-                <label class="toggle"><input type="checkbox" class="push-toggle"><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" class="push-toggle" data-setting-key="pushAnnouncements"><span class="track"><span class="thumb"></span></span></label>
               </div>
             </div>
 
@@ -1271,6 +1271,23 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
     profileMenu.querySelectorAll('.profile-menu-item').forEach(item => item.addEventListener('click', closeProfileMenu));
 
+    // Sign out — both the profile-menu item and the danger button further down
+    // the page call this directly instead of relying only on a page-agnostic
+    // delegated listener elsewhere in the app.
+    function schoolagySignOutClick(e) {
+      e.preventDefault();
+      if (typeof window.__schoolagySignOut === 'function') {
+        window.__schoolagySignOut();
+      } else {
+        // Fallback for the standalone preview (this file opened outside the
+        // Next.js app, where no session backend is wired up).
+        window.location.href = 'login.html';
+      }
+    }
+    document.querySelectorAll('[data-action="signout"]').forEach(btn => {
+      btn.addEventListener('click', schoolagySignOutClick);
+    });
+
     // Bottom nav — same purely-visual-for-the-preview pattern as home.html;
     // pages with a real file behind them (data-href) actually navigate.
     document.querySelectorAll('.nav-link').forEach(link => {
@@ -1425,15 +1442,48 @@
     });
 
     // ------------------------------------------------------------------
+    // Misc settings-page options — one small shared localStorage record
+    // (schoolagy_settings_options, a flat { optionId: value } object) for
+    // every other Settings control that isn't important enough for its
+    // own dedicated key like SCHOOLAGY_DARK_MODE_KEY/SCHOOLAGY_PROFILE_KEY
+    // above. Added 2026-09-08 — before this, Potato PC Mode, the push
+    // notification category toggles, Weekly Grade Summary, and Sync
+    // Across Devices all only mutated in-memory/DOM state, so every one
+    // of them silently reset the instant you left the page or reloaded
+    // ("no options save basically"). Same read/write shape as the other
+    // two keys: try/catch, and this page is the only writer.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_SETTINGS_OPTIONS_KEY = 'schoolagy_settings_options';
+    function loadSettingsOptions() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_SETTINGS_OPTIONS_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function saveSettingsOption(key, value) {
+      try {
+        const opts = loadSettingsOptions();
+        opts[key] = value;
+        localStorage.setItem(SCHOOLAGY_SETTINGS_OPTIONS_KEY, JSON.stringify(opts));
+      } catch {}
+    }
+    const settingsOptions = loadSettingsOptions();
+
+    // ------------------------------------------------------------------
     // Potato PC Mode — same real, working toggle as onboarding.html
     // (see the body.potato-mode CSS rules near the top of this file):
     // strips the skewed/italic display styling and every CSS
-    // transition/animation on the page.
+    // transition/animation on the page. Persisted via
+    // schoolagy_settings_options as of 2026-09-08 — previously this only
+    // toggled a class for the current page load and forgot it immediately.
     // ------------------------------------------------------------------
     const potatoModeToggle = document.getElementById('potatoModeToggle');
+    potatoModeToggle.checked = settingsOptions.potatoMode === true;
     document.body.classList.toggle('potato-mode', potatoModeToggle.checked);
     potatoModeToggle.addEventListener('change', () => {
       document.body.classList.toggle('potato-mode', potatoModeToggle.checked);
+      saveSettingsOption('potatoMode', potatoModeToggle.checked);
     });
 
     // ------------------------------------------------------------------
@@ -1967,6 +2017,11 @@
     });
 
     const weeklyGradeSummaryToggle = document.getElementById('weeklyGradeSummaryToggle');
+    // Persisted via schoolagy_settings_options as of 2026-09-08. Still
+    // gated behind a verified email on every load, same as the toggle
+    // logic below — a saved "on" from before doesn't override that.
+    weeklyGradeSummaryToggle.checked = settingsOptions.weeklyGradeSummary === true
+      && !!profileState.email && profileState.emailVerified;
     const emailNudgeOverlay = document.getElementById('emailNudgeOverlay');
     const emailNudgeTitle = document.getElementById('emailNudgeTitle');
     const emailNudgeBody = document.getElementById('emailNudgeBody');
@@ -2018,6 +2073,7 @@
       // itself rather than making the user go turn it on again.
       if (pendingWeeklySummaryEnable) {
         weeklyGradeSummaryToggle.checked = true;
+        saveSettingsOption('weeklyGradeSummary', true);
         pendingWeeklySummaryEnable = false;
       }
     }
@@ -2061,7 +2117,7 @@
     profileCardVerifyBtn.addEventListener('click', openEmailVerifyModal);
 
     weeklyGradeSummaryToggle.addEventListener('change', () => {
-      if (!weeklyGradeSummaryToggle.checked) return; // turning it off never needs gating
+      if (!weeklyGradeSummaryToggle.checked) { saveSettingsOption('weeklyGradeSummary', false); return; } // turning it off never needs gating
       if (!profileState.email) {
         weeklyGradeSummaryToggle.checked = false;
         openEmailNudge();
@@ -2070,7 +2126,9 @@
       if (!profileState.emailVerified) {
         weeklyGradeSummaryToggle.checked = false;
         openEmailNudge();
+        return;
       }
+      saveSettingsOption('weeklyGradeSummary', true);
     });
 
     document.addEventListener('keydown', e => {
@@ -2160,16 +2218,25 @@
       // (or the browser silently denies it, e.g. no secure context).
       Notification.requestPermission().then(permission => {
         const granted = permission === 'granted';
-        if (pendingPushToggle) pendingPushToggle.checked = granted;
+        if (pendingPushToggle) {
+          pendingPushToggle.checked = granted;
+          saveSettingsOption(pendingPushToggle.dataset.settingKey, granted);
+        }
         pendingPushToggle = null;
         updatePushPermissionNote();
         closeNotificationAccessModal();
       });
     });
+    // Persisted via schoolagy_settings_options as of 2026-09-08 — each
+    // category's on/off preference used to just be DOM checkbox state,
+    // reset to unchecked on every reload even after permission had
+    // already been granted once.
     pushToggles.forEach(toggle => {
+      toggle.checked = settingsOptions[toggle.dataset.settingKey] === true
+        && notificationPermissionState() === 'granted'; // honest: can't be really "on" without real permission
       toggle.addEventListener('change', () => {
-        if (!toggle.checked) return; // turning off never needs permission
-        if (notificationPermissionState() === 'granted') return; // already granted — nothing more to do
+        if (!toggle.checked) { saveSettingsOption(toggle.dataset.settingKey, false); return; } // turning off never needs permission
+        if (notificationPermissionState() === 'granted') { saveSettingsOption(toggle.dataset.settingKey, true); return; } // already granted — nothing more to do
         toggle.checked = false; // revert until the real request resolves
         openNotificationAccessModal(toggle);
       });
@@ -2183,10 +2250,14 @@
     // needs no confirmation.
     // ------------------------------------------------------------------
     const syncAcrossDevicesToggle = document.getElementById('syncAcrossDevicesToggle');
+    // Persisted via schoolagy_settings_options as of 2026-09-08. Defaults
+    // to on (matches the HTML's `checked` attribute) when nothing's been
+    // saved yet — only an explicit saved `false` turns it off on load.
+    syncAcrossDevicesToggle.checked = settingsOptions.syncAcrossDevices !== false;
     const syncOffConfirmOverlay = document.getElementById('syncOffConfirmOverlay');
     function closeSyncOffConfirm() { syncOffConfirmOverlay.classList.remove('show'); }
     syncAcrossDevicesToggle.addEventListener('change', () => {
-      if (syncAcrossDevicesToggle.checked) return; // turning on never needs confirming
+      if (syncAcrossDevicesToggle.checked) { saveSettingsOption('syncAcrossDevices', true); return; } // turning on never needs confirming
       syncAcrossDevicesToggle.checked = true; // hold it on until the user actually confirms
       syncOffConfirmOverlay.classList.add('show');
     });
@@ -2195,6 +2266,7 @@
     syncOffConfirmOverlay.addEventListener('click', e => { if (e.target === syncOffConfirmOverlay) closeSyncOffConfirm(); });
     document.getElementById('syncOffConfirmTurnOff').addEventListener('click', () => {
       syncAcrossDevicesToggle.checked = false;
+      saveSettingsOption('syncAcrossDevices', false);
       closeSyncOffConfirm();
     });
 

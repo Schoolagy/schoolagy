@@ -346,10 +346,14 @@
   .cal-dow-cell { text-align: center; font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); padding: 8px 2px; }
 
   /* flex:1 + min-height:0 so the grid fills whatever's left of
-     .cal-grid-wrap; grid-auto-rows keeps each row a real day-cell height
-     as a floor (1fr lets rows share out any extra space evenly instead
-     of one giant blank margin below the last row). */
-  .cal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(84px, 1fr); flex: 1; min-height: 0; overflow-y: auto; }
+     .cal-grid-wrap instead of leaving a big blank margin below the last
+     row. Capped at 120px per row (2026-09-08, was an unbounded 1fr —
+     on a tall viewport that stretched every day cell absurdly tall;
+     120px is enough to comfortably hold 3-4 event chips without
+     ballooning). align-content:start means any space left over once
+     rows hit that cap just sits as blank surface below the grid,
+     inside the card, instead of stretching cells further. */
+  .cal-month-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: minmax(84px, 120px); flex: 1; min-height: 0; overflow-y: auto; align-content: start; }
   .cal-day-cell {
     min-height: 84px;
     min-width: 0; /* grid items default to min-width:auto, which lets a
@@ -404,11 +408,15 @@
   .cal-day-more:hover { color: var(--text-dark); }
 
   /* ---------- Week view ---------- */
-  /* flex:1 lets this single-row grid grow to fill .cal-grid-wrap
-     (rows default to align-content:normal, which stretches a lone row
-     to whatever height the grid ends up with) instead of stopping at
-     min-height and leaving the rest of the card empty below it. */
-  .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); flex: 1; min-height: 0; }
+  /* flex:1 lets this single-row grid grow to fill .cal-grid-wrap instead
+     of stopping at min-height and leaving the rest of the card empty
+     below it — but capped at 320px (2026-09-08; was unbounded, which on
+     a tall viewport stretched the single week-row to 500px+). Explicit
+     grid-template-rows (not grid-auto-rows — there's only ever one row
+     here) plus align-content:start means growth stops at the cap and any
+     further leftover height is blank surface below the row, not more
+     row-stretching. */
+  .cal-week-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: minmax(220px, 260px); flex: 1; min-height: 0; align-content: start; }
   .cal-week-cell {
     min-height: 220px;
     min-width: 0;
@@ -705,6 +713,58 @@
     // "View Assignment" button deep-links into a real assignment.html
     // record instead of a generic fallback.
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course (in home.html's Customize editor
+    // or courses.html's Reorder tool — the only places that WRITE these)
+    // used to be invisible everywhere else, since every page just
+    // re-generated its own hardcoded COURSES array from scratch on load.
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present); schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page only READS both — applyCourseCustomizationsInPlace()
+    // is called right after the raw array literal below, mutating COURSES
+    // in place, so it's already the customized/reordered version before
+    // anything on this page ever renders it. Same defensive
+    // try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
     const COURSES = [
       { id: 'apchem', name: 'AP Chemistry', color: '#a67a22' },
       { id: 'algebra2', name: 'Algebra II', color: '#5b6ea3' },
@@ -713,6 +773,7 @@
       { id: 'spanish3', name: 'Spanish III', color: '#8a6ba1' },
       { id: 'pe', name: 'PE', color: '#4f8c8a' },
     ];
+    applyCourseCustomizationsInPlace(COURSES);
     const SCHOOL_SOURCE = { id: 'school', name: 'School & District', color: '#5c6370' };
     const ALL_SOURCES = [...COURSES, SCHOOL_SOURCE];
 

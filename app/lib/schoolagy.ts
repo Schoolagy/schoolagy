@@ -134,10 +134,20 @@ export async function signOut(): Promise<void> {
   cacheClear(SESSION_CACHE);
   cacheClear(BUNDLE_CACHE);
   try {
-    await fetch(`${API_BASE}/auth/session`, {
-      method: "DELETE",
-      credentials: "include",
-    });
+    const controller = new AbortController();
+    // The button must never feel stuck: if the API doesn't answer quickly,
+    // give up on the network call and move on — the caches above are already
+    // cleared and the cookie will expire on its own either way.
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      await fetch(`${API_BASE}/auth/session`, {
+        method: "DELETE",
+        credentials: "include",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch {
     /* the cookie expires on its own; local caches are already cleared */
   }

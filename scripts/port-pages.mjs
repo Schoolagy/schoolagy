@@ -343,6 +343,28 @@ function wireOnboardingComplete(script, file) {
 /** The only two pages with a file input, and so the only two that need the model. */
 const UPLOAD_PAGES = new Set(["onboarding", "settings"]);
 
+/**
+ * Page-specific external <script src="…"> tags that must actually load in the
+ * real app.
+ *
+ * The extract() step below only ever pulls <title>, <style> and inline
+ * <script> (no src=) out of a source page — the same gap documented on
+ * layout.tsx's Typekit <link>. A <link rel="stylesheet"> silently missing
+ * just breaks a font; a <script src> silently missing breaks a FEATURE with
+ * no visible error — course-materials.html's "Download Folder" checked
+ * `typeof JSZip === 'undefined'` and, since the CDN tag never made it into
+ * the built app at all, always showed its "you're offline" fallback message
+ * regardless of the user's actual connection (found and fixed 2026-09-08).
+ *
+ * Unlike Typekit (every page, so it lives once in layout.tsx), each of these
+ * is needed by exactly one page — loading a .zip library app-wide for pages
+ * that never zip anything would be pure waste, so they're wired per-page via
+ * LegacyPage's `externalScripts` prop instead.
+ */
+const EXTERNAL_SCRIPTS = {
+  "course-materials": ["https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"],
+};
+
 function generatePage(name, route, data) {
   const isLogin = name === "login";
   const outDir = route === "" ? APP_DIR : path.join(APP_DIR, route);
@@ -430,6 +452,7 @@ export default function Page() {${loginEffect}
       scriptJs={SCRIPT_JS}
       requiresAuth={${!isLogin}}
       hasUploads={${UPLOAD_PAGES.has(name)}}
+      externalScripts={${JSON.stringify(EXTERNAL_SCRIPTS[name] || [])}}
     />
   );
 }

@@ -658,7 +658,62 @@
     // underneath). Teacher names for apchem/english10/pe match the
     // Messages widget's senders in home.html for consistency; the other
     // three are new (Martin said "add anything you want").
+    //
     // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Same
+    // schoolagy_course_custom (per-course name/color overrides, keyed by
+    // course id, only actually-customized courses present) and
+    // schoolagy_course_order (full custom ordering of course ids) keys
+    // home.html's Customize editor uses — see that file for the fuller
+    // note. This page's own Reorder tool below is the other place that
+    // WRITES schoolagy_course_order (it has no rename/color UI of its
+    // own, so it never writes schoolagy_course_custom); every other page
+    // only reads both. applyCourseCustomizationsInPlace() is called right
+    // after the raw array literal, mutating COURSES in place, so it's
+    // already customized/reordered before anything renders it, and the
+    // reorder tool's existing in-place COURSES.splice() calls need no
+    // other change. Same
+    // defensive try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in
+    // settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function saveCourseOrder(ids) {
+      try { localStorage.setItem(SCHOOLAGY_COURSE_ORDER_KEY, JSON.stringify(ids)); } catch {}
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
     const COURSES = [
       { id: 'apchem', name: 'AP Chemistry', code: '76_M0431', period: 2, teacher: 'Alvarez', section: '1204', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago' },
       { id: 'algebra2', name: 'Algebra II', code: '76_S0512', period: 3, teacher: 'Whitfield', section: '1188', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago' },
@@ -667,6 +722,7 @@
       { id: 'spanish3', name: 'Spanish III', code: '76_G0295', period: 5, teacher: 'Ortiz', section: '1417', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago' },
       { id: 'pe', name: 'PE', code: '76_P0300', period: 6, teacher: 'Reyes', section: '1125', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago' },
     ];
+    applyCourseCustomizationsInPlace(COURSES);
 
     function findCourse(id) { return COURSES.find(c => c.id === id); }
 
@@ -1114,6 +1170,7 @@
         [...coursesBody.children].forEach(row => { firstRects[row.dataset.id] = row.getBoundingClientRect(); });
         const [moved] = COURSES.splice(draggedIdx, 1);
         COURSES.splice(overIdx, 0, moved);
+        saveCourseOrder(COURSES.map(c => c.id));
         renderCoursesTable();
         [...coursesBody.children].forEach(row => {
           const first = firstRects[row.dataset.id];
@@ -1154,6 +1211,7 @@
           if (j < 0 || j >= COURSES.length) return;
           e.preventDefault();
           [COURSES[i], COURSES[j]] = [COURSES[j], COURSES[i]];
+          saveCourseOrder(COURSES.map(c => c.id));
           renderCoursesTable();
           const handles = coursesBody.querySelectorAll('.course-drag-handle');
           if (handles[j]) handles[j].focus();

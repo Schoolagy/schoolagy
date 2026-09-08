@@ -633,6 +633,17 @@
     contactModal.addEventListener('click', e => { if (e.target === contactModal) closeContactModal(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && contactModal.classList.contains('show')) closeContactModal(); });
 
+    // Deep link: contacts.html?open=<id> opens straight to that person's
+    // card (2026-09-08, added so messages.html's "View full contact" link
+    // — from the To box's contact info popup — actually lands on the right
+    // record instead of just the general directory).
+    (function openFromQueryParam() {
+      const id = new URLSearchParams(location.search).get('open');
+      if (!id) return;
+      const c = CONTACTS.find(x => x.id === id);
+      if (c) openContactModal(c);
+    })();
+
     // Nav — Home/Courses/Grades/Assignments/Messages are real links
     // between real pages (same full-mesh convention every other page
     // uses); Calendar/Settings stay visual-only placeholders until those

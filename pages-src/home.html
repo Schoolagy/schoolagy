@@ -401,6 +401,7 @@
   }
   table.grades tbody tr:last-child td { border-bottom: none; }
   table.grades tbody td:not(:first-child) { text-align: center; }
+  table.grades tbody tr[data-href] { cursor: pointer; }
 
   .course-cell { display: flex; align-items: center; gap: 9px; }
   .course-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -526,6 +527,11 @@
     font-style: italic;
     font-weight: 800;
   }
+  /* Clickable widget rows (assignments, today items, messages) all share
+     this data-href/role="link" convention — one rule covers the cursor for
+     all of them instead of repeating it per widget type. */
+  [data-href][role="link"] { cursor: pointer; }
+
   .today-item {
     display: flex;
     align-items: center;
@@ -1005,7 +1011,7 @@
           <div class="widget-block" id="block-grades" data-widget="grades">
             <div class="section-head">
               <h2>Grades</h2>
-              <span class="see-all">See gradebook</span>
+              <span class="see-all" role="link" tabindex="0" data-href="grades.html">See gradebook</span>
             </div>
             <table class="grades">
               <thead>
@@ -1023,7 +1029,7 @@
           <div class="today-block widget-block" id="block-today" data-widget="today">
             <div class="today-head">
               <div class="today-date">Mon, Aug 24</div>
-              <span class="see-all">See calendar</span>
+              <span class="see-all" role="link" tabindex="0" data-href="calendar.html">See calendar</span>
             </div>
             <div id="todayList"></div>
           </div>
@@ -1033,7 +1039,7 @@
           <div class="widget-block" id="block-assignments" data-widget="assignments">
             <div class="section-head">
               <h2>Assignments</h2>
-              <span class="see-all">See all</span>
+              <span class="see-all" role="link" tabindex="0" data-href="assignments.html">See all</span>
             </div>
             <div class="assign-section-label overdue">Overdue <span class="assign-count" id="overdueCount">0</span></div>
             <div id="overdueList"></div>
@@ -1046,7 +1052,7 @@
           <div class="today-block widget-block widget-messages" id="block-messages" data-widget="messages" hidden>
             <div class="today-head">
               <div class="today-date">Messages</div>
-              <span class="see-all">See messages</span>
+              <span class="see-all" role="link" tabindex="0" data-href="messages.html">See messages</span>
             </div>
             <div id="messagesList"></div>
           </div>
@@ -1163,7 +1169,86 @@
     // `name` — everything below (history, assignments, today, messages)
     // references courses by id, so renaming a course in the editor never
     // breaks those lookups the way keying off the name string would.
-    const COURSES = [
+    //
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course in the Customize editor below
+    // used to live only in this page's in-memory COURSES array, so it
+    // reset the instant you navigated anywhere (including just reloading
+    // Home) — "reordering/renaming/backgrounds don't save across pages".
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present) and schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page (via the editor below) and courses.html (via
+    // its own Reorder tool) are the two places that WRITE these; every
+    // other page only reads them. applyCourseCustomizationsInPlace() is
+    // called right here, right after COURSES is bound to the raw array,
+    // mutating it in place, so COURSES is already the customized/reordered
+    // version before anything below ever renders it — the rest of this
+    // file's rendering and in-place COURSES mutations (splice, index
+    // assignment, etc.) needs no other change. Same defensive
+    // try/catch-per-key style as
+    // SCHOOLAGY_DARK_MODE_KEY/SCHOOLAGY_PROFILE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function saveCourseCustom(id, patch) {
+      const all = loadCourseCustom();
+      all[id] = Object.assign({}, all[id], patch);
+      try { localStorage.setItem(SCHOOLAGY_COURSE_CUSTOM_KEY, JSON.stringify(all)); } catch {}
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function saveCourseOrder(ids) {
+      try { localStorage.setItem(SCHOOLAGY_COURSE_ORDER_KEY, JSON.stringify(ids)); } catch {}
+    }
+    function clearCourseCustomizations() {
+      try {
+        localStorage.removeItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        localStorage.removeItem(SCHOOLAGY_COURSE_ORDER_KEY);
+      } catch {}
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) — this page's editor already
+      // mutates COURSES in place elsewhere (splice, index assignment,
+      // etc.), and keeping RAW_COURSES's binding a plain literal (rather
+      // than wrapping it in a function call) is what lets
+      // scripts/port-pages.mjs's data-overrides transform find and
+      // rewrite it for live Schoology data.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
+    // Raw/default course data, in the mock's original hardcoded order —
+    // COURSES itself (below) starts out as this same array with any saved
+    // customization/order then applied to it in place; DEFAULT_COURSES
+    // (what "Reset to default" restores) is captured as a deep clone
+    // BEFORE that happens, never of the customized COURSES, so Reset
+    // always gets back to the true hardcoded defaults even after
+    // renaming, recoloring, or reordering.
+    const RAW_COURSES = [
       { id: 'apchem', name: 'AP Chemistry', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago' },
       { id: 'algebra2', name: 'Algebra II', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago' },
       { id: 'english10', name: 'English 10', color: '#6b8f5e', grade: 'C+', pct: 78, predicted: 'C', predictedPct: 74, trend: 'down', updated: '3h ago' },
@@ -1171,10 +1256,9 @@
       { id: 'spanish3', name: 'Spanish III', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago' },
       { id: 'pe', name: 'PE', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago' },
     ];
-
-    // Deep-cloned once at load, before any editor changes — what "Reset
-    // to default" restores (names, colors, and widget picks alike).
-    const DEFAULT_COURSES = JSON.parse(JSON.stringify(COURSES));
+    const DEFAULT_COURSES = JSON.parse(JSON.stringify(RAW_COURSES));
+    const COURSES = RAW_COURSES;
+    applyCourseCustomizationsInPlace(COURSES);
     const DEFAULT_WIDGETS = { messages: false };
 
     // Per-course assignment score history behind the "Predicted" figure —
@@ -1362,6 +1446,21 @@
     // replacing the lists' innerHTML on every re-render.
     wireRowNav(document.getElementById('overdueList'));
     wireRowNav(document.getElementById('upcomingList'));
+
+    // "See gradebook" / "See calendar" / "See all" / "See messages" widget-
+    // header links — same [data-href] convention as everything else, wired
+    // once since these spans never re-render. Scoped to just the header
+    // rows (not the whole card-grid) so it can't intercept clicks meant for
+    // gradesBody's own delegated handler, which has its own .trend-skipping
+    // logic that a broader listener here would bypass.
+    document.querySelectorAll('.section-head .see-all[data-href], .today-head .see-all[data-href]').forEach(el => {
+      el.addEventListener('click', () => { window.location.href = el.dataset.href; });
+      el.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        window.location.href = el.dataset.href;
+      });
+    });
 
     const todayList = document.getElementById('todayList');
     function renderTodayList() {
@@ -1674,6 +1773,7 @@
 
     function setCourseColor(i, hex, wrap) {
       COURSES[i].color = hex;
+      saveCourseCustom(COURSES[i].id, { color: hex });
       wrap.querySelector('.editor-course-swatch').style.background = hex;
       refreshCourseDependentUI();
     }
@@ -1703,6 +1803,7 @@
         input.addEventListener('input', () => {
           const c = COURSES[+input.dataset.idx];
           c.name = input.value.trim() || c.name;
+          saveCourseCustom(c.id, { name: c.name });
           refreshCourseDependentUI();
         });
       });
@@ -1720,6 +1821,7 @@
           if (j < 0 || j >= COURSES.length) return;
           e.preventDefault();
           [COURSES[i], COURSES[j]] = [COURSES[j], COURSES[i]];
+          saveCourseOrder(COURSES.map(c => c.id));
           renderEditorCourseList();
           refreshCourseDependentUI();
           editorCourseList.querySelectorAll('.course-drag-handle')[j].focus();
@@ -1801,6 +1903,7 @@
       if (overIdx !== draggedCourseIdx) {
         const [moved] = COURSES.splice(draggedCourseIdx, 1);
         COURSES.splice(overIdx, 0, moved);
+        saveCourseOrder(COURSES.map(c => c.id));
         // The preview transforms already slid every row to roughly
         // where it's about to land, so rebuilding the list here reads
         // as the tail end of that same motion rather than a snap.
@@ -2170,7 +2273,19 @@
     });
 
     document.getElementById('editorReset').addEventListener('click', () => {
-      COURSES.forEach((c, i) => Object.assign(c, DEFAULT_COURSES[i]));
+      // Restore both the array's CONTENTS and its ORDER to the true
+      // hardcoded defaults — a plain per-index Object.assign (the old
+      // behavior) only overwrote each slot's fields, so a course that
+      // had been reordered kept its new position but got a different
+      // course's id/name/color pasted into it. Clearing and repopulating
+      // in DEFAULT_COURSES's own order (rather than reassigning COURSES
+      // itself) keeps every other closure's reference to this same array
+      // valid, matching how the rest of the editor mutates COURSES in
+      // place. Also clears the persisted customization/order so a future
+      // reload doesn't bring the just-reset state right back.
+      COURSES.length = 0;
+      DEFAULT_COURSES.forEach(c => COURSES.push(JSON.parse(JSON.stringify(c))));
+      clearCourseCustomizations();
       widgetPrefs.messages = DEFAULT_WIDGETS.messages;
       leftOrder = [...DEFAULT_LEFT_ORDER];
       rightOrder = [...DEFAULT_RIGHT_ORDER];

@@ -863,6 +863,58 @@
     // assignments.html uses, so a given assignment's title/type/date/
     // score/status match no matter which page it's viewed from.
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course (in home.html's Customize editor
+    // or courses.html's Reorder tool — the only places that WRITE these)
+    // used to be invisible everywhere else, since every page just
+    // re-generated its own hardcoded COURSES array from scratch on load.
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present); schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page only READS both — applyCourseCustomizationsInPlace()
+    // is called right after the raw array literal below, mutating COURSES
+    // in place, so it's already the customized/reordered version before
+    // anything on this page ever renders it. Same defensive
+    // try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
     const COURSES = [
       { id: 'apchem', name: 'AP Chemistry', color: '#a67a22', teacher: 'Mr. Alvarez' },
       { id: 'algebra2', name: 'Algebra II', color: '#5b6ea3', teacher: 'Ms. Whitfield' },
@@ -871,6 +923,7 @@
       { id: 'spanish3', name: 'Spanish III', color: '#8a6ba1', teacher: 'Ms. Ortiz' },
       { id: 'pe', name: 'PE', color: '#4f8c8a', teacher: 'Coach Reyes' },
     ];
+    applyCourseCustomizationsInPlace(COURSES);
     function findCourse(id) { return COURSES.find(c => c.id === id); }
 
     const TYPE_LABEL = { assignment: 'Assignment', discussion: 'Discussion', assessment: 'Quiz' };

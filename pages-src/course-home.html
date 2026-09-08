@@ -425,7 +425,7 @@
 
   .assign-group-label { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin: 14px 0 2px; }
   .assign-group-label:first-child { margin-top: 0; }
-  .hub-assign-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .hub-assign-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
   .hub-assign-item:last-child { border-bottom: none; }
   .hub-assign-tick { width: 4px; align-self: stretch; min-height: 32px; border-radius: 999px; flex-shrink: 0; background: var(--text-faint); }
   .hub-assign-item.overdue .hub-assign-tick { background: var(--grade-bad); }
@@ -980,7 +980,63 @@
     // teacher/section fields courses.html added. Kept in sync by hand
     // across the three files for now — see architecture-decisions.md's
     // note about promoting shared sample data once there's a build step.
+    //
     // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Same
+    // schoolagy_course_custom (per-course name/color overrides, keyed by
+    // course id, only actually-customized courses present) and
+    // schoolagy_course_order (full custom ordering of course ids) keys
+    // home.html's Customize editor uses — see that file for the fuller
+    // note. This page's own info pop-out (course name field + color
+    // swatch below) is the other place that WRITES
+    // schoolagy_course_custom — it never reorders, so it doesn't write
+    // schoolagy_course_order. applyCourseCustomizationsInPlace() is
+    // called right after the raw array literal below, mutating COURSES
+    // in place, so `course` (found from COURSES right below) already
+    // reflects any saved rename/recolor before this page renders
+    // anything. Same defensive try/catch-per-key style as
+    // SCHOOLAGY_DARK_MODE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function saveCourseCustom(id, patch) {
+      const all = loadCourseCustom();
+      all[id] = Object.assign({}, all[id], patch);
+      try { localStorage.setItem(SCHOOLAGY_COURSE_CUSTOM_KEY, JSON.stringify(all)); } catch {}
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
     const COURSES = [
       { id: 'apchem', name: 'AP Chemistry', code: '76_M0431', period: 2, teacher: 'Mr. Alvarez', section: '1204', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago', desc: 'Lab-based introduction to chemical reactions, stoichiometry, and gas laws, with weekly lab reports.' },
       { id: 'algebra2', name: 'Algebra II', code: '76_S0512', period: 3, teacher: 'Mr. Whitfield', section: '1188', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago', desc: 'Functions, systems of equations, and factoring, building toward Pre-Calculus.' },
@@ -989,6 +1045,7 @@
       { id: 'spanish3', name: 'Spanish III', code: '76_G0295', period: 5, teacher: 'Sra. Ortiz', section: '1417', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago', desc: 'Intermediate conversation and composition, with weekly listening checks.' },
       { id: 'pe', name: 'PE', code: '76_P0300', period: 6, teacher: 'Coach Reyes', section: '1125', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago', desc: 'Fitness training and team sports, graded on participation and fitness logs.' },
     ];
+    applyCourseCustomizationsInPlace(COURSES);
 
     // Which course this hub is showing — from ?course=<id> in the URL,
     // same route shape as site-map.md's /courses/{course_id}. Falls back
@@ -1212,9 +1269,14 @@
     const upcomingItems = UPCOMING.filter(u => u.courseId === course.id).map(u => ({ status: 'upcoming', type: u.type, title: u.title, day: dayNum(u.due), due: u.due })).sort((a, b) => a.day - b.day);
     const gradedRecent = gradedItems.slice(-5);
 
+    // Same assignment.html?course=…&title=… deep-link convention home.html's
+    // assign-item rows already use — see assignmentHref() there.
+    function assignmentHref(item) {
+      return `assignment.html?course=${encodeURIComponent(course.id)}&title=${encodeURIComponent(item.title)}`;
+    }
     function assignRowHTML(item) {
       return `
-        <div class="hub-assign-item ${item.status}">
+        <div class="hub-assign-item ${item.status}" role="link" tabindex="0" data-href="${assignmentHref(item)}" aria-label="${item.title}">
           <span class="hub-assign-tick"></span>
           <div class="hub-assign-text">
             <p class="hub-assign-title">${item.title}</p>
@@ -1248,6 +1310,20 @@
       if (!btn) return;
       document.querySelectorAll('.assign-filter').forEach(b => b.classList.toggle('active', b === btn));
       renderAssignList(btn.dataset.filter);
+    });
+    // Delegated on the list's parent so re-renders (filter switches) never
+    // need rewiring — same pattern home.html's assign-item lists use.
+    const assignListBody = document.getElementById('assignListBody');
+    assignListBody.addEventListener('click', e => {
+      const row = e.target.closest('[data-href]');
+      if (row) window.location.href = row.dataset.href;
+    });
+    assignListBody.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('[data-href]');
+      if (!row) return;
+      e.preventDefault();
+      window.location.href = row.dataset.href;
     });
 
     // ------------------------------------------------------------------
@@ -1437,6 +1513,7 @@
       const name = modalNameInput.value;
       if (!name) return;
       course.name = name;
+      saveCourseCustom(course.id, { name });
       document.getElementById('hubTitle').textContent = `Your ${name} Hub`;
       document.getElementById('bannerName').textContent = name;
       document.title = `Schoolagy — ${name} Hub`;
@@ -1450,7 +1527,10 @@
     const modalColorBtn = document.getElementById('modalColorBtn');
     const modalColorPopup = document.getElementById('modalColorPopup');
     modalColorBtn.style.background = course.color;
-    initColorSwatchPopup(modalColorBtn, modalColorPopup, hex => applyCourseColor(hex));
+    initColorSwatchPopup(modalColorBtn, modalColorPopup, hex => {
+      applyCourseColor(hex);
+      saveCourseCustom(course.id, { color: hex });
+    });
     function openInfoModal() { infoModal.classList.add('show'); document.getElementById('modalCloseBtn').focus(); }
     function closeInfoModal() { infoModal.classList.remove('show'); document.getElementById('infoBtn').focus(); }
     document.getElementById('infoBtn').addEventListener('click', openInfoModal);

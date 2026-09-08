@@ -732,7 +732,8 @@
      regardless of who sent it (unlike the text bubble, which flips
      color for "me"), matching how a real messaging app shows an
      attachment distinctly from the text around it. */
-  .msgs-bubble-attachment { display: flex; align-items: center; gap: 9px; max-width: 74%; padding: 6px 12px 6px 6px; border-radius: 14px; background: var(--panel-inner); }
+  .msgs-bubble-attachment { display: flex; align-items: center; gap: 9px; max-width: 74%; padding: 6px 12px 6px 6px; border-radius: 14px; background: var(--panel-inner); cursor: pointer; }
+  .msgs-bubble-attachment:hover { background: var(--border); }
   .msgs-bubble-attachment .msgs-file-chip, .msgs-bubble-attachment .msgs-media-chip { width: 28px; height: 28px; font-size: 0.52rem; }
   .msgs-bubble-attachment .msgs-media-chip svg { width: 13px; height: 13px; }
   .msgs-bubble-attachment-text { min-width: 0; }
@@ -978,6 +979,94 @@
     .nav-link { min-width: 0; padding: 10px 3px 8px; }
     .nav-link .label { font-size: 0.58rem; }
   }
+
+  /* ---------- Contact info popup (2026-09-08) — same .modal-overlay/
+     .modal-box/.contact-modal-* convention as contacts.html's own contact
+     detail modal, copied verbatim so the two look and behave identically. ---------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 21, 31, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease;
+    z-index: 60;
+  }
+  .modal-overlay.show { opacity: 1; visibility: visible; }
+  .modal-box {
+    background: var(--panel-bg, #eaeaec);
+    border-radius: var(--window-radius-lg, 22px);
+    padding: 20px 22px;
+    width: 100%;
+    max-width: 340px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    position: relative;
+    transform: translateY(8px);
+    transition: transform 0.16s ease;
+  }
+  .modal-overlay.show .modal-box { transform: translateY(0); }
+  .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: none;
+    border: none;
+    font-size: 1rem;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+  }
+  .modal-close:hover { color: var(--text-dark); }
+  .contact-modal-head { display: flex; align-items: center; gap: 12px; clear: both; padding-top: 4px; }
+  .contact-modal-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.05rem;
+    flex-shrink: 0;
+  }
+  .modal-box h3 { margin: 0; font-size: 1.1rem; font-weight: 900; font-style: italic; color: var(--text-dark); }
+  .modal-code { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin: 2px 0 0; }
+  .modal-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+  .modal-row:last-of-type { border-bottom: none; }
+  .modal-row .k { color: var(--text-faint); font-weight: 700; }
+  .modal-row .v { color: var(--text-dark); font-weight: 700; text-align: right; }
+  .modal-rows { margin-top: 14px; }
+  .contact-modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .contact-modal-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 10px;
+    border-radius: 999px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.78rem;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .contact-modal-btn:hover { background: var(--accent-dark); }
+  .contact-modal-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .contact-modal-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+  .contact-modal-btn.secondary { background: var(--panel-inner); color: var(--text-dark); }
+  .contact-modal-btn.secondary:hover { background: var(--border); }
+  /* The To box's selected-recipient state (see selectToPerson) — visually
+     signals it's now clickable-for-info rather than free-typed text. */
+  .msgs-to-input.msgs-to-selected { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -1128,6 +1217,37 @@
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contact info popup (2026-09-08, fixing Martin's report: "clicking on
+       people's name inside of the type a message box at the top won't open
+       their contact info popup" — before this fix, a selected recipient's
+       name just sat as plain text inside the To <input>, which can never be
+       "clicked" as a name — clicking an input only places a text cursor.
+       Same .modal-overlay/.modal-box convention as contacts.html's own
+       contact detail modal (deliberately trimmed here: no Message button,
+       since you're already composing to this person — just a link out to
+       the fuller contacts.html record). -->
+  <div class="modal-overlay" id="toContactModal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="toContactModalName">
+      <button class="modal-close" id="toContactModalCloseBtn" type="button" aria-label="Close contact info">✕</button>
+      <div class="contact-modal-head">
+        <span class="contact-modal-avatar" id="toContactModalAvatar"></span>
+        <div>
+          <h3 id="toContactModalName"></h3>
+          <p class="modal-code" id="toContactModalRole"></p>
+        </div>
+      </div>
+      <div class="modal-rows">
+        <div class="modal-row"><span class="k">Department</span><span class="v" id="toContactModalDept"></span></div>
+      </div>
+      <div class="contact-modal-actions">
+        <a class="contact-modal-btn secondary" id="toContactModalViewBtn" href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+          View full contact
+        </a>
       </div>
     </div>
   </div>
@@ -1667,22 +1787,75 @@
     // — the timestamp that would normally sit inside the bubble is shown
     // as its own small caption under that last chip instead, so it isn't
     // lost, and isn't repeated under every chip when there are several.
+    // Fixed 2026-09-08 (Martin: "links in messages... are not openable" /
+    // "files in messages... are not downloadable"): this chip used to be
+    // pure static HTML with no click behavior at all — a real click did
+    // nothing, regardless of what the attachment was. It's now a real
+    // button, keyed by the same data-kind/data-name/data-url/data-title it
+    // carries here, opened by the delegated handler on #threadBubbles
+    // below (attachmentClickHandler).
     function renderBubbleAttachment(a, standaloneLabel, standaloneSentAt) {
       if (!a) return '';
-      let chip;
+      let chip, dataAttrs;
       if (a.kind === 'doc') {
         const ext = fileExt(a.name);
         chip = `<span class="msgs-file-chip" style="background:${fileExtColor(ext)}" aria-hidden="true">${ext}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name">${escapeHtml(a.name)}</span></span>`;
+        dataAttrs = `data-kind="doc" data-name="${escapeHtml(a.name)}"`;
       } else if (a.kind === 'link') {
         chip = `<span class="msgs-media-chip" aria-hidden="true">${ICON_LINK}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name msgs-bubble-attachment-name-link">${escapeHtml(a.title)}</span></span>`;
+        dataAttrs = `data-kind="link" data-url="${escapeHtml(a.url)}"`;
       } else if (a.kind === 'video' || a.kind === 'audio') {
         chip = `<span class="msgs-media-chip" aria-hidden="true">${a.kind === 'video' ? ICON_VIDEO : ICON_AUDIO}</span><span class="msgs-bubble-attachment-text"><span class="msgs-bubble-attachment-name">${escapeHtml(a.name)}</span><span class="msgs-bubble-attachment-meta">${a.duration}</span></span>`;
+        dataAttrs = `data-kind="${a.kind}" data-name="${escapeHtml(a.name)}"`;
       } else {
         return '';
       }
       const timeHtml = standaloneLabel ? timeSpanHtml(standaloneLabel, standaloneSentAt, 'msgs-bubble-attachment-time') : '';
-      return `<div class="msgs-bubble-attachment">${chip}</div>${timeHtml}`;
+      return `<div class="msgs-bubble-attachment" role="button" tabindex="0" ${dataAttrs}>${chip}</div>${timeHtml}`;
     }
+
+    // A doc/video/audio attachment has no real file behind it — same
+    // "no backend to store real bytes yet" situation as course-materials.html
+    // — so "download" is a real download of a small placeholder text blob
+    // naming the real attachment, not a dead link. Mirrors
+    // course-materials.html's downloadPlaceholderFile() exactly.
+    function downloadPlaceholderAttachment(name) {
+      const content = `${name}\n\nThis is a placeholder file from the Schoolagy mockup — no real file content is stored yet.\nReal file delivery is coming with the Drive/Canva integrations (Release 1.0.0).`;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function openBubbleAttachment(el) {
+      const kind = el.dataset.kind;
+      if (kind === 'link') {
+        let url = el.dataset.url || '';
+        if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else if (kind === 'doc' || kind === 'video' || kind === 'audio') {
+        downloadPlaceholderAttachment(el.dataset.name);
+      }
+    }
+    // Delegated on #threadBubbles so it covers every attachment in both the
+    // normal single-thread view and the merged "All subjects" timeline
+    // (both render into this same container) without needing to rewire
+    // anything on every re-render.
+    threadBubbles.addEventListener('click', e => {
+      const el = e.target.closest('.msgs-bubble-attachment');
+      if (el) openBubbleAttachment(el);
+    });
+    threadBubbles.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const el = e.target.closest('.msgs-bubble-attachment');
+      if (!el) return;
+      e.preventDefault();
+      openBubbleAttachment(el);
+    });
 
     // One message's markup -- shared by the normal single-thread view
     // (renderBubbles) and the merged "All subjects" timeline
@@ -1921,9 +2094,49 @@
       if (!p || !pendingThread) return;
       pendingThread.personId = id;
       toInput.value = p.name;
+      toInput.classList.add('msgs-to-selected');
       closeToResults();
       threadBubbles.innerHTML = draftBubblesPlaceholder();
     }
+
+    // Contact info popup, opened by clicking the To box once a recipient is
+    // selected (see the toInput click listener below) — fixes Martin's
+    // report that clicking a selected recipient's name did nothing (an
+    // <input>'s value is plain text; there was nothing to click). Same
+    // .modal-overlay convention as contacts.html's own contact detail
+    // modal — see that file's openContactModal() for the twin.
+    const toContactModal = document.getElementById('toContactModal');
+    function openToContactModal(id) {
+      const c = CONTACTS.find(x => x.id === id);
+      const t = TEACHERS[id];
+      if (!c && !t) return;
+      document.getElementById('toContactModalAvatar').textContent = avatarInitial((c || t).name);
+      document.getElementById('toContactModalAvatar').style.background = (c || t).color;
+      document.getElementById('toContactModalName').textContent = (c || t).name;
+      document.getElementById('toContactModalRole').textContent = c ? (c.role || c.dept) : t.course;
+      document.getElementById('toContactModalDept').textContent = c ? c.dept : t.course;
+      // Only someone in the full district directory has a real record on
+      // contacts.html to deep-link to — a one-off recipient that arrived
+      // via a compose deep-link with no matching CONTACTS entry doesn't.
+      const viewBtn = document.getElementById('toContactModalViewBtn');
+      if (c) {
+        viewBtn.href = `contacts.html?open=${encodeURIComponent(c.id)}`;
+        viewBtn.hidden = false;
+      } else {
+        viewBtn.hidden = true;
+      }
+      toContactModal.classList.add('show');
+      document.getElementById('toContactModalCloseBtn').focus();
+    }
+    function closeToContactModal() { toContactModal.classList.remove('show'); }
+    document.getElementById('toContactModalCloseBtn').addEventListener('click', closeToContactModal);
+    toContactModal.addEventListener('click', e => { if (e.target === toContactModal) closeToContactModal(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && toContactModal.classList.contains('show')) closeToContactModal();
+    });
+    toInput.addEventListener('click', () => {
+      if (pendingThread?.personId) openToContactModal(pendingThread.personId);
+    });
 
     function draftBubblesPlaceholder() {
       const p = pendingThread && pendingThread.personId ? TEACHERS[pendingThread.personId] : null;
@@ -1945,6 +2158,7 @@
       toBar.hidden = false;
       subjectBar.hidden = false;
       toInput.value = '';
+      toInput.classList.remove('msgs-to-selected');
       closeToResults();
       subjectInput.value = '';
       threadBubbles.innerHTML = draftBubblesPlaceholder();
@@ -1993,6 +2207,7 @@
       toBar.hidden = false;
       subjectBar.hidden = false;
       toInput.value = pendingThread.personId ? TEACHERS[pendingThread.personId].name : '';
+      toInput.classList.toggle('msgs-to-selected', !!pendingThread.personId);
       closeToResults();
       subjectInput.value = pendingThread.subject || '';
       threadBubbles.innerHTML = draftBubblesPlaceholder();
@@ -2004,6 +2219,7 @@
       // Typing invalidates whatever was previously selected -- you can't
       // stay "sending to" someone whose name you've since edited away.
       pendingThread.personId = null;
+      toInput.classList.remove('msgs-to-selected');
       renderToResults(toInput.value);
     });
     toInput.addEventListener('focus', () => {
