@@ -1,0 +1,2413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Home</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  :root {
+    /* Same accent system as login.html / onboarding.html — whatever the
+       user picked in onboarding drives this. Defaulted here to the warm
+       red/orange from Martin's draft rather than the onboarding default
+       blue, since that's the swatch this mock is built around. */
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+
+    /* Sampled directly from Martin's Home.pdf background (pixel-picked
+       off the rendered PDF) rather than approximated — lighter salmon-
+       orange corner and a much darker, more saturated blood-red corner
+       than what was here before. */
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+
+    /* Panel tokens match onboarding.html's actual chrome — a neutral
+       gray card (not pure white) floating on the accent gradient, with
+       a darker "inner" tone for nested sub-sections. Home was originally
+       built with its own separate white/pastel dashboard-card look that
+       didn't match the rest of the app; this brings it back in line. */
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+
+    /* Muted, ink-like grade colors instead of bright traffic-light
+       green/amber/red — reads as considered rather than a generic
+       status-badge palette. Used as text color only, no pill background. */
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+
+    /* Same pill-toggle track color as onboarding.html's Features step,
+       used here for the editor's widget toggles. */
+    --toggle-track-bg: #c7c7cd;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    /* The actual "red dot" swatch image from onboarding.html's Theme-step
+       swatch grid (accent #923424) — not a hand-approximated gradient —
+       same convention onboarding.html itself uses for its own backdrop. */
+    background-color: var(--page-bg-end);
+    background-image: url("data:image/png;base64,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");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 100px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 980px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- .card grows to
+      its natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* ---------- Top bar: profile / greeting ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 2px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- One card, like every other page — not scattered widget
+     tiles. Grades/Today live on the left, Assignments on the right,
+     separated by a rule inside the same panel rather than three
+     separately-shadowed floating cards. Grows to its natural content
+     height; .page (above) scrolls as a whole when content runs long.
+     border-radius/box-shadow below apply regardless of which element
+     is doing the scrolling -- corners are always rounded, they're just
+     only both visible on screen at once when the whole card fits. */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+  }
+
+  @media (max-width: 860px) {
+    .card-grid { grid-template-columns: 1fr; }
+    .col-left { border-right: none !important; border-bottom: 1px solid var(--border); }
+  }
+
+  .col-left {
+    border-right: 1px solid var(--border);
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .col-right {
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* Order-independent spacing: column children are widget blocks that
+     can be dragged around (see below), so spacing comes from the
+     column's own `gap` rather than a fixed margin on any one widget (a
+     margin would look wrong once a widget that used to be first/last
+     moves elsewhere). */
+  .widget-block { position: relative; }
+
+  /* ---------- On-page widget drag mode — entered by the "Reorder &
+     resize widgets" button in the editor, which closes the editor and
+     hands off to dragging the widgets directly instead of an abstract
+     list. A widget only trades places with the other widget in its
+     own column (see JS), since the columns aren't the same width, and
+     previews the swap live as you drag (a transform-based preview,
+     finished off with a short FLIP animation on release — see
+     animateReorder in JS) instead of only updating once you let go.
+     A thin flat outline marks which widgets are draggable — `outline`
+     rather than `border` so it doesn't shift any layout, and no
+     box-shadow paired with it, just the flat line, rounded to match
+     the rest of the app (Chromium follows border-radius for outline)
+     and offset outward from the widget's own box rather than hugging
+     it flush, so the line sits in the gap between widgets instead of
+     landing on top of their text. An earlier inset-shadow "corners
+     darken inward" treatment was dropped since it read as a stray
+     shadow once the actual resize handles (below) were in place.
+     Dragged with plain mousedown/mousemove/mouseup in JS, same as the
+     resize handle above — NOT native HTML5 drag-and-drop, which this
+     used to be built on. That native version had a real bug (not just
+     a touch-support gap): mutating the dragged element's own style
+     synchronously inside its `dragstart` handler — this used to set
+     opacity:0 on it immediately — interferes with the browser's own
+     drag-image capture and can silently cancel the drag, so `drop`
+     never fires and the widget just snaps back to its original slot
+     with no visible error. Plain mouse events sidestep that whole
+     class of native-DnD flakiness entirely. Mouse/trackpad only. */
+  .widget-block.drag-mode {
+    cursor: grab;
+    border-radius: var(--window-radius-md);
+    outline: 1px solid #000;
+    outline-offset: 8px;
+  }
+  .widget-block.drag-mode:active { cursor: grabbing; }
+  /* Raised above its siblings and given a heavier shadow while being
+     dragged — this is now the real widget following the cursor (there's
+     no separate native drag-ghost image anymore), so it needs to read
+     as "lifted" rather than being hidden the way the old native-DnD
+     version hid the source element in favor of the browser's ghost. */
+  .widget-block.drag-mode.dragging {
+    cursor: grabbing;
+    z-index: 15;
+    box-shadow: 0 26px 50px -14px rgba(0,0,0,0.55);
+  }
+
+  /* Resize handle — sits on the corner facing the middle of the page
+     (bottom-right for a left-column widget like Grades, bottom-left
+     for a right-column widget like Assignments), half on/half off the
+     widget's own edge like a real grab grip: a gray ring plus a
+     smaller black nub on top of it. Dragged directly with the mouse
+     (mousedown/mousemove/mouseup in JS, not native drag-and-drop, so
+     it can update continuously) rather than a dropdown, so the widget
+     visibly grows/shrinks in real time as you drag instead of only
+     jumping between presets on release. Grabbing the handle also
+     blocks the widget's own drag-to-reorder from starting — its own
+     mousedown handler calls stopPropagation (see attachResizeHandle in
+     JS) so the widget's reorder-drag mousedown listener never fires. */
+  .widget-resize-handle {
+    position: absolute;
+    bottom: -12px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 6;
+    touch-action: none;
+  }
+  .widget-resize-handle[data-corner="br"] { right: -12px; cursor: nwse-resize; }
+  .widget-resize-handle[data-corner="bl"] { left: -12px; cursor: nesw-resize; }
+  .wrh-ring {
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: #cfcfd4;
+    border: 2px solid var(--panel-bg);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+  }
+  .wrh-nub {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #1c1c1e;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.45);
+    transition: transform 120ms ease;
+  }
+  .widget-resize-handle:hover .wrh-nub,
+  .widget-resize-handle:active .wrh-nub { transform: scale(1.18); }
+  .widget-resize-handle:focus-visible { outline: none; }
+  .widget-resize-handle:focus-visible .wrh-ring {
+    box-shadow: 0 0 0 2px var(--accent-ring), 0 3px 8px rgba(0,0,0,0.3);
+  }
+
+  .drag-done-btn {
+    position: fixed;
+    right: 24px;
+    bottom: 96px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 13px 22px;
+    font-weight: 800;
+    font-size: 0.85rem;
+    box-shadow: 0 14px 30px -8px rgba(0,0,0,0.55);
+    cursor: pointer;
+    z-index: 20;
+  }
+  .drag-done-btn:hover { background: var(--accent-dark); }
+  @media (max-width: 520px) {
+    .drag-done-btn { right: 16px; bottom: 88px; padding: 11px 18px; font-size: 0.8rem; }
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-head h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  .section-head .see-all,
+  .today-head .see-all {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .section-head .see-all:hover,
+  .today-head .see-all:hover { text-decoration: underline; }
+
+  /* ---------- Grades ---------- */
+  table.grades {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  table.grades thead th {
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+    padding: 0 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.grades thead th:not(:first-child) { text-align: center; }
+  table.grades tbody td {
+    padding: 11px 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-dark);
+  }
+  table.grades tbody tr:last-child td { border-bottom: none; }
+  table.grades tbody td:not(:first-child) { text-align: center; }
+  table.grades tbody tr[data-href] { cursor: pointer; }
+
+  .course-cell { display: flex; align-items: center; gap: 9px; }
+  .course-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .course-name { font-weight: 700; }
+
+  .grade-val {
+    font-weight: 800;
+    font-size: 0.9rem;
+  }
+  .grade-val.good { color: var(--grade-good); }
+  .grade-val.mid { color: var(--grade-mid); }
+  .grade-val.bad { color: var(--grade-bad); }
+  .grade-pct {
+    display: block;
+    font-weight: 600;
+    font-size: 0.68rem;
+    color: var(--text-faint);
+    margin-top: 1px;
+  }
+
+  .trend { display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-weight: 700; font-size: 0.82rem; color: var(--text-muted); }
+  .trend .arrow { display: inline-flex; align-items: center; justify-content: center; width: 13px; font-weight: 800; font-size: 0.95rem; transform: translateY(1px); }
+  .trend.up .arrow { color: var(--grade-good); }
+  .trend.down .arrow { color: var(--grade-bad); }
+  .trend.flat .arrow { color: var(--text-faint); transform: translateY(-3px); }
+  .trend .grade-pct { display: inline; margin-top: 0; margin-left: 2px; }
+
+  /* Predicted-grade cell doubles as a hover/focus target for the
+     reasoning popup — a tinted chip instead of an underline, colored
+     to match its own arrow (green/red/grey) so the box itself repeats
+     the up/down/flat signal rather than just marking "this is
+     hoverable." */
+  .trend.has-popup {
+    cursor: help;
+    border-radius: 6px;
+    padding: 3px 7px;
+  }
+  .trend.has-popup.up { background: rgba(47, 125, 84, 0.14); }
+  .trend.has-popup.down { background: rgba(182, 67, 47, 0.14); }
+  .trend.has-popup.flat { background: rgba(131, 132, 154, 0.14); }
+  .trend.has-popup:hover,
+  .trend.has-popup:focus-visible { filter: brightness(0.94); }
+  .trend.has-popup:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-ring);
+  }
+
+  .updated { color: var(--text-faint); font-size: 0.76rem; }
+
+  /* ---------- Predicted-grade reasoning popup ---------- */
+  .grade-popup {
+    position: fixed;
+    z-index: 50;
+    width: 272px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 22px 48px -16px rgba(0,0,0,0.5);
+    padding: 14px 16px 10px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+  }
+  .grade-popup.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .grade-popup h3 {
+    margin: 0 0 2px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: var(--text-dark);
+  }
+  .grade-popup .popup-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    line-height: 1.4;
+  }
+  .grade-popup .popup-sub strong { color: var(--text-dark); }
+  .grade-popup svg { display: block; overflow: visible; }
+  .grade-popup .popup-foot {
+    font-size: 0.62rem;
+    color: var(--text-faint);
+    margin: 6px 0 0;
+    text-align: right;
+    font-style: italic;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grade-popup { transition: none; }
+  }
+
+  /* ---------- Today — an inset sub-panel, same idea as the darker
+     "panel-inner" tone onboarding.html uses for nested sections. ---------- */
+  .today-block {
+    background: var(--panel-inner);
+    border-radius: var(--window-radius-md);
+    padding: 16px 18px;
+  }
+  .today-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .today-date {
+    font-size: 0.98rem;
+    font-weight: 900;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  /* The Messages widget reuses .today-block's layout for its header,
+     but "Messages" is a section title like "Grades"/"Assignments"
+     (see .section-head h2), not a date — .today-date's plain heavy
+     weight was built for an actual date string like "Mon, Aug 24" and
+     looked out of place as a heading, so it gets the same italic
+     treatment as every other widget title here instead. */
+  .widget-messages .today-date {
+    font-style: italic;
+    font-weight: 800;
+  }
+  /* Clickable widget rows (assignments, today items, messages) all share
+     this data-href/role="link" convention — one rule covers the cursor for
+     all of them instead of repeating it per widget type. */
+  [data-href][role="link"] { cursor: pointer; }
+
+  .today-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+  }
+  .today-tick {
+    width: 4px;
+    align-self: stretch;
+    border-radius: 999px;
+    flex-shrink: 0;
+    min-height: 28px;
+  }
+  .today-item-text p { margin: 0; }
+  .today-item-title { font-weight: 700; font-size: 0.84rem; color: var(--text-dark); }
+  .today-item-class { font-size: 0.74rem; color: var(--text-muted); font-style: italic; }
+
+  /* ---------- Messages — an optional widget, same "today-block" inset
+     panel treatment, but not shown by default: only appears once added
+     via the editor. See the Widgets section of the editor below. ---------- */
+  .message-item { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; }
+  .message-tick { width: 4px; align-self: stretch; border-radius: 999px; flex-shrink: 0; min-height: 32px; }
+  .message-item-text p { margin: 0; }
+  .message-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .message-item-from { font-weight: 700; font-size: 0.84rem; color: var(--text-dark); }
+  .message-item-time { font-size: 0.68rem; color: var(--text-faint); flex-shrink: 0; }
+  .message-item-preview { font-size: 0.76rem; color: var(--text-muted); margin-top: 1px !important; }
+
+  /* ---------- Assignments ---------- */
+  .assign-section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    margin: 16px 0 8px;
+  }
+  .assign-section-label:first-child { margin-top: 0; }
+  .assign-section-label.overdue { color: var(--grade-bad); }
+  .assign-count {
+    background: var(--grade-bad);
+    color: #fff;
+    font-size: 0.64rem;
+    font-weight: 800;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .assign-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .assign-item:last-child { border-bottom: none; }
+
+  .assign-tick {
+    width: 4px;
+    align-self: stretch;
+    min-height: 32px;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .assign-text { flex: 1; min-width: 0; }
+  .assign-title { font-weight: 700; font-size: 0.83rem; color: var(--text-dark); margin: 0; }
+  .assign-meta { font-size: 0.73rem; color: var(--text-muted); margin: 1px 0 0; }
+  .assign-meta .assign-type {
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 800;
+    font-size: 0.63rem;
+    color: var(--text-faint);
+  }
+  .assign-meta .assign-course { font-style: italic; }
+
+  .assign-due {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .assign-item.is-overdue .assign-due { color: var(--grade-bad); }
+
+  /* ---------- Bottom nav — a flat text bar in the same idiom as
+     onboarding.html's own step nav (bold text labels + a small accent
+     dot for the active one), not a floating glass dock of colored app
+     icons. Keeps the whole app speaking one visual language. ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label {
+    display: block;
+    max-width: 100%;
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+  }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: transparent;
+  }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+
+  @media (max-width: 520px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+
+  /* ---------- Edit FAB — opens the Customize editor ---------- */
+  .edit-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 96px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    box-shadow: 0 14px 30px -8px rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 20;
+    transition: transform 0.15s ease;
+  }
+  .edit-fab:hover { transform: scale(1.06); }
+  .edit-fab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring), 0 14px 30px -8px rgba(0,0,0,0.55); }
+  .edit-fab svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  /* The button's own `display: flex` above would otherwise beat the
+     UA [hidden] rule when the JS toggles the `hidden` property while
+     entering widget drag mode. */
+  .edit-fab[hidden] { display: none; }
+
+  @media (max-width: 520px) {
+    .edit-fab { right: 16px; bottom: 88px; width: 44px; height: 44px; }
+  }
+
+  /* ---------- Customize editor — a modal in the same panel language
+     as every other surface (panel-bg card, matching box-shadow), not a
+     separate design system for "settings." ---------- */
+  .editor-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 8, 8, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 30;
+  }
+  .editor-overlay.show { display: flex; }
+
+  .editor-modal {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0,0,0,0.55);
+    width: 100%;
+    max-width: 420px;
+    max-height: min(640px, 86vh);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .editor-head h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    transform: skewX(-2deg);
+  }
+  .editor-close {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: var(--panel-inner);
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .editor-close:hover { color: var(--text-dark); }
+
+  .editor-body { padding: 16px 20px 4px; overflow-y: auto; }
+
+  .editor-section { margin-bottom: 20px; }
+  .editor-section h3 {
+    margin: 0 0 10px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+  }
+
+  .editor-course-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .editor-course-row:last-child { border-bottom: none; }
+  /* Swatch + popup replaces a bare native <input type="color">: the OS
+     color dialog it used to pop open on click behaved inconsistently
+     across browsers/platforms (Martin flagged it not working in every
+     place it showed up). Clicking the swatch now opens the SAME shared
+     color-swatch-popup component used for the course-color and
+     accent-color pickers elsewhere in the app (Martin asked for one
+     consistent picker everywhere) — one floating, viewport-clamped
+     48-color grid, reused across every course row via event delegation
+     (see bindColorPopovers) rather than one popup per row. */
+  .color-swatch-wrap { position: relative; flex-shrink: 0; }
+  .editor-course-swatch {
+    display: block;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--panel-bg);
+    box-shadow: 0 0 0 1px var(--border);
+    padding: 0;
+    cursor: pointer;
+  }
+  .editor-course-swatch:hover,
+  .editor-course-swatch:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--border), 0 0 0 3px var(--accent-ring);
+  }
+
+  /* Shared color-swatch popup — same component as onboarding.html's
+     accent picker and course-home.html's course-color picker. Fixed
+     position with top/left set by JS (positionColorSwatchPopup),
+     clamped to the viewport so it can't run off screen or get clipped
+     by a transformed/scrolling ancestor. Sized to fit its own grid
+     tracks exactly (width omitted, so a fixed-position box with no
+     explicit width shrink-wraps to its content) rather than a separate
+     fixed px width that can drift out of sync with the track math and
+     let swatches spill past the background box's edge. */
+  .color-swatch-popup {
+    position: fixed;
+    z-index: 60;
+    display: none;
+    grid-template-columns: repeat(12, 16px);
+    gap: 5px;
+    padding: 12px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+  .color-swatch-popup.show { display: grid; }
+  .color-swatch-cell {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    border: none;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+    transition: transform 0.1s ease;
+  }
+  .color-swatch-cell:hover, .color-swatch-cell:focus-visible {
+    transform: scale(1.22);
+    box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--accent-dark, #333);
+    outline: none;
+  }
+  .editor-course-name {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    background: var(--panel-inner);
+    border: 1px solid transparent;
+    border-radius: var(--window-radius-sm);
+    padding: 7px 10px;
+  }
+  .editor-course-name:focus { outline: none; border-color: var(--accent); background: var(--panel-bg); }
+
+  /* Drag handle — six dots, replaces the old up/down move buttons.
+     Only the handle itself is draggable-aware (see JS: dragstart is
+     cancelled unless it began on the handle), so grabbing the name
+     input or color swatch never starts a drag. Keyboard users get an
+     Arrow Up/Down equivalent while the handle is focused. */
+  .course-drag-handle {
+    display: grid;
+    grid-template-columns: repeat(2, 4px);
+    grid-template-rows: repeat(3, 4px);
+    gap: 3px;
+    width: 16px;
+    height: 20px;
+    flex-shrink: 0;
+    align-content: center;
+    justify-content: center;
+    cursor: grab;
+    border-radius: 4px;
+  }
+  .course-drag-handle span { width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint); }
+  .course-drag-handle:hover span,
+  .course-drag-handle:focus-visible span { background: var(--text-muted); }
+  .course-drag-handle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .course-drag-handle:active { cursor: grabbing; }
+  /* Fully hidden, not just dimmed: the rows between the old and new
+     spot slide live to fill this row's slot as you drag over them
+     (see previewCourseOrder in JS), and the browser's own drag-ghost
+     image already follows the cursor — a dimmed original sitting here
+     too would show through underneath whichever row just slid on top
+     of it. */
+  .editor-course-row.dragging { opacity: 0; }
+
+  /* "Reorder & resize widgets" — a single button (see below), not a
+     panel: clicking it closes this modal and hands reordering off to
+     dragging the actual widgets on the page (see the drag-mode rules
+     further down), which is more direct than an abstracted list here. */
+  .widget-reorder { margin-bottom: 14px; }
+  .widget-reorder-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel-inner);
+    border: none;
+    border-radius: var(--window-radius-sm);
+    padding: 10px 12px;
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-dark);
+    cursor: pointer;
+  }
+  .widget-reorder-toggle:hover { background: var(--border); }
+  .widget-reorder-toggle .chev { width: 14px; height: 14px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .editor-widget-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+  }
+  .editor-widget-text p { margin: 0; }
+  .editor-widget-title { font-weight: 700; font-size: 0.86rem; color: var(--text-dark); }
+  .editor-widget-desc { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px !important; }
+
+  /* Apple-style pill toggle — same construction as onboarding.html's
+     Features-step toggles, so the editor speaks the same visual
+     language as the rest of the app's settings surfaces. */
+  .toggle { position: relative; display: inline-block; width: 40px; height: 24px; flex-shrink: 0; }
+  .toggle input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 1; }
+  .toggle .track { position: absolute; inset: 0; background: var(--toggle-track-bg); border-radius: 999px; transition: background 0.2s ease; }
+  .toggle .thumb { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); transition: transform 0.2s ease; }
+  .toggle input:checked ~ .track { background: var(--accent); }
+  .toggle input:checked ~ .track .thumb { transform: translateX(16px); }
+  .toggle input:focus-visible ~ .track { box-shadow: 0 0 0 3px var(--accent-ring); }
+
+  .editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .editor-reset {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 8px 4px;
+  }
+  .editor-reset:hover { color: var(--grade-bad); }
+  .editor-done {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font-weight: 800;
+    font-size: 0.85rem;
+    padding: 9px 20px;
+    cursor: pointer;
+  }
+  .editor-done:hover { background: var(--accent-dark); }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Hey, Martin</h1>
+        <p class="subtitle">Monday, August 24</p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-grid">
+        <div class="col-left" id="colLeft">
+          <div class="widget-block" id="block-grades" data-widget="grades">
+            <div class="section-head">
+              <h2>Grades</h2>
+              <span class="see-all" role="link" tabindex="0" data-href="grades.html">See gradebook</span>
+            </div>
+            <table class="grades">
+              <thead>
+                <tr>
+                  <th>Course</th>
+                  <th>Grade</th>
+                  <th>Predicted</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="gradesBody"></tbody>
+            </table>
+          </div>
+
+          <div class="today-block widget-block" id="block-today" data-widget="today">
+            <div class="today-head">
+              <div class="today-date">Mon, Aug 24</div>
+              <span class="see-all" role="link" tabindex="0" data-href="calendar.html">See calendar</span>
+            </div>
+            <div id="todayList"></div>
+          </div>
+        </div>
+
+        <div class="col-right" id="colRight">
+          <div class="widget-block" id="block-assignments" data-widget="assignments">
+            <div class="section-head">
+              <h2>Assignments</h2>
+              <span class="see-all" role="link" tabindex="0" data-href="assignments.html">See all</span>
+            </div>
+            <div class="assign-section-label overdue">Overdue <span class="assign-count" id="overdueCount">0</span></div>
+            <div id="overdueList"></div>
+            <div class="assign-section-label">Upcoming</div>
+            <div id="upcomingList"></div>
+          </div>
+
+          <!-- Optional widget — hidden unless added via the editor's
+               Widgets section (off by default). -->
+          <div class="today-block widget-block widget-messages" id="block-messages" data-widget="messages" hidden>
+            <div class="today-head">
+              <div class="today-date">Messages</div>
+              <span class="see-all" role="link" tabindex="0" data-href="messages.html">See messages</span>
+            </div>
+            <div id="messagesList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grade-popup" id="gradePopup" role="tooltip"></div>
+
+  <button class="edit-fab" id="editFab" type="button" aria-haspopup="dialog" aria-label="Customize this page">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 20h9"/>
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+    </svg>
+  </button>
+
+  <!-- Shown only while dragging widgets around the page (see JS) — takes
+       the pencil's place at the same spot and returns to the editor. -->
+  <button class="drag-done-btn" id="dragDoneBtn" type="button" hidden>Done</button>
+
+  <div class="editor-overlay" id="editorOverlay">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+      <div class="editor-head">
+        <h2 id="editorTitle">Customize Home</h2>
+        <button class="editor-close" id="editorClose" type="button" aria-label="Close editor">&times;</button>
+      </div>
+      <div class="editor-body" id="editorBody">
+        <div class="editor-section">
+          <h3>Courses</h3>
+          <div id="editorCourseList"></div>
+          <div class="color-swatch-popup" id="courseColorPopup" role="menu" aria-label="Preset colors"></div>
+        </div>
+        <div class="editor-section">
+          <h3>Widgets</h3>
+
+          <div class="widget-reorder">
+            <button class="widget-reorder-toggle" id="widgetReorderToggle" type="button">
+              <span>Reorder &amp; resize widgets</span>
+              <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <div class="editor-widget-row">
+            <div class="editor-widget-text">
+              <p class="editor-widget-title">Messages</p>
+              <p class="editor-widget-desc">Not shown by default — add a preview of your recent messages to Home.</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="widgetMessagesToggle" aria-label="Show Messages widget on Home">
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="editor-actions">
+        <button class="editor-reset" id="editorReset" type="button">Reset to default</button>
+        <button class="editor-done" id="editorDone" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner" id="dock">
+      <button class="nav-link active" type="button" data-page="home">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="courses" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
+    // Sample data only — this page has no backend yet. Structured the way
+    // real Schoology API data will actually look (course name + hex color
+    // the student picked on that course's overview page, grade/predicted
+    // as letter grades, assignment "type" matching Schoology's real three
+    // gradable types: assignment / discussion / assessment) so swapping
+    // in live data later is just replacing these arrays.
+    //
+    // Course colors are a muted, curated palette (not a bright default
+    // chart-library rainbow) so the per-class color system reads as a
+    // deliberate design choice rather than an auto-generated one.
+    // ------------------------------------------------------------------
+    // Each course has a stable `id` separate from its (editable) display
+    // `name` — everything below (history, assignments, today, messages)
+    // references courses by id, so renaming a course in the editor never
+    // breaks those lookups the way keying off the name string would.
+    //
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course in the Customize editor below
+    // used to live only in this page's in-memory COURSES array, so it
+    // reset the instant you navigated anywhere (including just reloading
+    // Home) — "reordering/renaming/backgrounds don't save across pages".
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present) and schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page (via the editor below) and courses.html (via
+    // its own Reorder tool) are the two places that WRITE these; every
+    // other page only reads them. applyCourseCustomizationsInPlace() is
+    // called right here, right after COURSES is bound to the raw array,
+    // mutating it in place, so COURSES is already the customized/reordered
+    // version before anything below ever renders it — the rest of this
+    // file's rendering and in-place COURSES mutations (splice, index
+    // assignment, etc.) needs no other change. Same defensive
+    // try/catch-per-key style as
+    // SCHOOLAGY_DARK_MODE_KEY/SCHOOLAGY_PROFILE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function saveCourseCustom(id, patch) {
+      const all = loadCourseCustom();
+      all[id] = Object.assign({}, all[id], patch);
+      try { localStorage.setItem(SCHOOLAGY_COURSE_CUSTOM_KEY, JSON.stringify(all)); } catch {}
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function saveCourseOrder(ids) {
+      try { localStorage.setItem(SCHOOLAGY_COURSE_ORDER_KEY, JSON.stringify(ids)); } catch {}
+    }
+    function clearCourseCustomizations() {
+      try {
+        localStorage.removeItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        localStorage.removeItem(SCHOOLAGY_COURSE_ORDER_KEY);
+      } catch {}
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) — this page's editor already
+      // mutates COURSES in place elsewhere (splice, index assignment,
+      // etc.), and keeping RAW_COURSES's binding a plain literal (rather
+      // than wrapping it in a function call) is what lets
+      // scripts/port-pages.mjs's data-overrides transform find and
+      // rewrite it for live Schoology data.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
+    // Raw/default course data, in the mock's original hardcoded order —
+    // COURSES itself (below) starts out as this same array with any saved
+    // customization/order then applied to it in place; DEFAULT_COURSES
+    // (what "Reset to default" restores) is captured as a deep clone
+    // BEFORE that happens, never of the customized COURSES, so Reset
+    // always gets back to the true hardcoded defaults even after
+    // renaming, recoloring, or reordering.
+    const RAW_COURSES = [
+      { id: 'apchem', name: 'AP Chemistry', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago' },
+      { id: 'algebra2', name: 'Algebra II', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago' },
+      { id: 'english10', name: 'English 10', color: '#6b8f5e', grade: 'C+', pct: 78, predicted: 'C', predictedPct: 74, trend: 'down', updated: '3h ago' },
+      { id: 'ushistory', name: 'U.S. History', color: '#a15c4f', grade: 'A-', pct: 91, predicted: 'A-', predictedPct: 91, trend: 'flat', updated: '5h ago' },
+      { id: 'spanish3', name: 'Spanish III', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago' },
+      { id: 'pe', name: 'PE', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago' },
+    ];
+    const DEFAULT_COURSES = JSON.parse(JSON.stringify(RAW_COURSES));
+    const COURSES = RAW_COURSES;
+    applyCourseCustomizationsInPlace(COURSES);
+    const DEFAULT_WIDGETS = { messages: false };
+
+    // Per-course assignment score history behind the "Predicted" figure —
+    // the real thing (see architecture-decisions.md) extrapolates the
+    // trend across a student's actual assignment averages rather than
+    // copying the current grade; this is the sample trace that popup
+    // visualizes. Last point is the prediction itself, kept separate
+    // from the real (graded) points so the chart can draw it as an
+    // extrapolation rather than a sixth graded assignment. Keyed by
+    // course id (see note above), not by name.
+    //
+    // X-axis is the date each assignment was graded, not the assignment's
+    // own name/title — titles can run long ("Chapter 6 Discussion Post")
+    // and don't read well as repeating axis labels the way a short date
+    // does.
+    const HISTORY = {
+      apchem: { points: [72, 79, 84, 88, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      algebra2: { points: [94, 96, 93, 97, 95], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      english10: { points: [88, 82, 79, 76, 73], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      ushistory: { points: [89, 93, 88, 92, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      spanish3: { points: [76, 80, 83, 85, 87], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      pe: { points: [96, 98, 95, 97, 96], dates: ['Aug 2', 'Aug 6', 'Aug 10', 'Aug 16', 'Aug 22'] },
+    };
+
+    const TYPE_LABEL = { assignment: 'Assignment', discussion: 'Discussion', assessment: 'Quiz' };
+
+    const OVERDUE = [
+      { type: 'assignment', title: 'Lab Report #4', courseId: 'apchem', due: 'Fri Aug 21' },
+      { type: 'discussion', title: 'Chapter 6 Discussion', courseId: 'english10', due: 'Thu Aug 20' },
+      { type: 'discussion', title: 'Reading Response', courseId: 'ushistory', due: 'Wed Aug 19' },
+    ];
+
+    // Longest-overdue first (furthest in the past), most-recently-due
+    // last, right above Upcoming — "due" strings have no year, so this
+    // assumes the same mock year the topbar's "Monday, August 24" date
+    // already implies.
+    function parseMockDate(due) {
+      const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+      const parts = due.trim().split(/\s+/);
+      return new Date(2026, MONTHS[parts[parts.length - 2]], parseInt(parts[parts.length - 1], 10));
+    }
+    OVERDUE.sort((a, b) => parseMockDate(a.due) - parseMockDate(b.due));
+
+    const UPCOMING = [
+      { type: 'assessment', title: 'Unit 2 Quiz', courseId: 'algebra2', due: 'Mon Aug 24' },
+      { type: 'assignment', title: 'Vocab Worksheet', courseId: 'spanish3', due: 'Tue Aug 25' },
+      { type: 'assignment', title: 'Problem Set 7', courseId: 'algebra2', due: 'Wed Aug 26' },
+    ];
+
+    // Overdue work belongs in the Assignments list's own Overdue section,
+    // not mixed into today's schedule — this is just what's on deck today.
+    const TODAY = [
+      { title: 'Unit 2 Quiz', courseId: 'algebra2' },
+    ];
+
+    // Sample data for the optional Messages widget (see the editor's
+    // Widgets section) — same shape a Schoology /v1/messages listing
+    // would give, trimmed to what a compact preview needs.
+    const MESSAGES = [
+      { from: 'Mr. Alvarez', courseId: 'apchem', preview: 'Lab report grading rubric is posted — see the Materials tab.', time: '1h ago' },
+      { from: 'Ms. Cho', courseId: 'english10', preview: 'Reminder: Chapter 6 discussion post is due Thursday.', time: '3h ago' },
+      { from: 'Coach Reyes', courseId: 'pe', preview: 'Great work on the fitness test this week!', time: '1d ago' },
+    ];
+
+    function findCourse(id) {
+      return COURSES.find(c => c.id === id);
+    }
+
+    function courseColor(id) {
+      const c = findCourse(id);
+      return c ? c.color : 'var(--text-faint)';
+    }
+
+    function courseName(id) {
+      const c = findCourse(id);
+      return c ? c.name : '';
+    }
+
+    function gradeBand(letter) {
+      if (letter.startsWith('A')) return 'good';
+      if (letter.startsWith('B')) return 'mid';
+      if (letter.startsWith('C')) return 'mid';
+      return 'bad';
+    }
+
+    // Diagonal, matching the direction of travel (up-right / down-right)
+    // instead of straight vertical arrows.
+    const TREND_ARROW = { up: '↗', down: '↘', flat: '–' };
+
+    const gradesBody = document.getElementById('gradesBody');
+    function renderGradesTable() {
+      gradesBody.innerHTML = '';
+      COURSES.forEach(c => {
+        const tr = document.createElement('tr');
+        // Row opens the course's own Hub page (course-home.html), same
+        // destination and role="link"/data-href convention courses.html
+        // already uses for its own rows — see the delegated click/keydown
+        // handlers below, which skip the Predicted-popup trigger the same
+        // way courses.html's courseRowNavTarget() does.
+        tr.setAttribute('role', 'link');
+        tr.tabIndex = 0;
+        tr.dataset.href = `course-home.html?course=${c.id}`;
+        tr.setAttribute('aria-label', `Open ${c.name}`);
+        tr.innerHTML = `
+          <td>
+            <div class="course-cell">
+              <span class="course-dot" style="background:${c.color}"></span>
+              <span class="course-name">${c.name}</span>
+            </div>
+          </td>
+          <td><span class="grade-val ${gradeBand(c.grade)}">${c.grade}<span class="grade-pct">${c.pct}%</span></span></td>
+          <td><span class="trend has-popup ${c.trend}" tabindex="0" role="button" aria-haspopup="true" aria-label="Why is ${c.name} predicted ${c.predicted}, ${c.predictedPct} percent? Show reasoning." data-course="${c.id}"><span class="arrow">${TREND_ARROW[c.trend]}</span>${c.predicted}<span class="grade-pct">(${c.predictedPct}%)</span></span></td>
+          <td class="updated">${c.updated}</td>
+        `;
+        gradesBody.appendChild(tr);
+      });
+      bindGradePopupTriggers();
+    }
+    // Delegated so re-renders (widget reorder, editor Done, etc.) don't
+    // need to re-wire anything. Ignores clicks on the Predicted-popup
+    // trigger itself so that keeps its own hover/focus behavior instead
+    // of also navigating away — same split courses.html's row handler
+    // already makes between the row and its interactive children.
+    gradesBody.addEventListener('click', e => {
+      if (widgetDragModeOn || e.target.closest('.trend')) return;
+      const row = e.target.closest('tr[data-href]');
+      if (row) window.location.href = row.dataset.href;
+    });
+    gradesBody.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      if (widgetDragModeOn || e.target.closest('.trend')) return;
+      const row = e.target.closest('tr[data-href]');
+      if (!row) return;
+      e.preventDefault();
+      window.location.href = row.dataset.href;
+    });
+
+    // Same course+title query string assignment.html already reads for
+    // every other entry point (assignments.html's own rows, an
+    // assignment-flagged file in course-materials.html) — see
+    // assignment.html's findAssignment()/fallback handling, which shows
+    // the real title with generic content even if a Home sample item
+    // doesn't happen to match one of assignment.html's own entries.
+    function assignmentHref(item) {
+      return `assignment.html?course=${encodeURIComponent(item.courseId)}&title=${encodeURIComponent(item.title)}`;
+    }
+    function renderAssignList(container, items, overdue) {
+      container.innerHTML = items.map(item => `
+        <div class="assign-item ${overdue ? 'is-overdue' : ''}" role="link" tabindex="0" data-href="${assignmentHref(item)}" aria-label="${item.title}, ${courseName(item.courseId)}">
+          <span class="assign-tick" style="background:${courseColor(item.courseId)}"></span>
+          <div class="assign-text">
+            <p class="assign-title">${item.title}</p>
+            <p class="assign-meta"><span class="assign-type">${TYPE_LABEL[item.type]}</span> · <span class="assign-course">${courseName(item.courseId)}</span></p>
+          </div>
+          <span class="assign-due">${item.due}</span>
+        </div>
+      `).join('');
+    }
+    // Delegated on each list's parent so re-renders never need rewiring
+    // — same convention as assignments.html's own assignListBody. Bails
+    // out during widget reorder/resize mode (see widgetDragModeOn below)
+    // so grabbing a row to drag its whole widget card doesn't also fire
+    // a navigation on release.
+    function wireRowNav(container) {
+      container.addEventListener('click', e => {
+        if (widgetDragModeOn) return;
+        const row = e.target.closest('[data-href]');
+        if (row) window.location.href = row.dataset.href;
+      });
+      container.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        if (widgetDragModeOn) return;
+        const row = e.target.closest('[data-href]');
+        if (!row) return;
+        e.preventDefault();
+        window.location.href = row.dataset.href;
+      });
+    }
+    function renderAssignLists() {
+      renderAssignList(document.getElementById('overdueList'), OVERDUE, true);
+      renderAssignList(document.getElementById('upcomingList'), UPCOMING, false);
+      document.getElementById('overdueCount').textContent = OVERDUE.length;
+    }
+    // Wired once — delegated listeners survive renderAssignList()
+    // replacing the lists' innerHTML on every re-render.
+    wireRowNav(document.getElementById('overdueList'));
+    wireRowNav(document.getElementById('upcomingList'));
+
+    // "See gradebook" / "See calendar" / "See all" / "See messages" widget-
+    // header links — same [data-href] convention as everything else, wired
+    // once since these spans never re-render. Scoped to just the header
+    // rows (not the whole card-grid) so it can't intercept clicks meant for
+    // gradesBody's own delegated handler, which has its own .trend-skipping
+    // logic that a broader listener here would bypass.
+    document.querySelectorAll('.section-head .see-all[data-href], .today-head .see-all[data-href]').forEach(el => {
+      el.addEventListener('click', () => { window.location.href = el.dataset.href; });
+      el.addEventListener('keydown', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        window.location.href = el.dataset.href;
+      });
+    });
+
+    const todayList = document.getElementById('todayList');
+    function renderTodayList() {
+      todayList.innerHTML = TODAY.map(item => `
+        <div class="today-item" role="link" tabindex="0" data-href="${assignmentHref(item)}" aria-label="${item.title}, ${courseName(item.courseId)}">
+          <span class="today-tick" style="background:${courseColor(item.courseId)}"></span>
+          <div class="today-item-text">
+            <p class="today-item-title">${item.title}</p>
+            <p class="today-item-class">${courseName(item.courseId)}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Widget preview, not a specific thread — Home's sample MESSAGES
+    // entries don't carry the same person/thread id messages.html's own
+    // sample data does, so rather than guess at a fragile deep link,
+    // every item opens the inbox itself (same destination the Messages
+    // nav tab already goes to).
+    const messagesList = document.getElementById('messagesList');
+    function renderMessagesWidget() {
+      messagesList.innerHTML = MESSAGES.map(m => `
+        <div class="message-item" role="link" tabindex="0" data-href="messages.html" aria-label="Message from ${m.from}: ${m.preview}">
+          <span class="message-tick" style="background:${courseColor(m.courseId)}"></span>
+          <div class="message-item-text">
+            <div class="message-item-top">
+              <p class="message-item-from">${m.from}</p>
+              <p class="message-item-time">${m.time}</p>
+            </div>
+            <p class="message-item-preview">${m.preview}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+    wireRowNav(todayList);
+    wireRowNav(messagesList);
+
+    // Nav: purely visual page-switching for the preview — swaps the
+    // active state, doesn't actually navigate anywhere yet.
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Predicted-grade reasoning popup — hover/focus a "Predicted" cell
+    // to see the assignment-score trend it's extrapolated from. Single
+    // series per chart (the course's own identity color, already used
+    // for its dot/tick elsewhere), so no legend is needed — the popup
+    // title names it. Y = %, X = the date each recent assignment was
+    // graded plus the predicted point, drawn as a dashed extrapolation
+    // with a hollow marker so it visibly reads as "not graded yet"
+    // rather than a sixth real assignment.
+    // ------------------------------------------------------------------
+    function niceBounds(values) {
+      const min = Math.min(...values), max = Math.max(...values);
+      let lo = Math.floor((min - 6) / 10) * 10;
+      let hi = Math.ceil((max + 6) / 10) * 10;
+      lo = Math.max(0, lo);
+      hi = Math.min(100, hi);
+      if (hi - lo < 20) { hi = Math.min(100, lo + 20); }
+      return [lo, hi];
+    }
+
+    function buildGradeChartSVG(course) {
+      const hist = HISTORY[course.id];
+      const allLabels = hist.dates.concat(['Predicted']);
+      const allValues = hist.points.concat([course.predictedPct]);
+      const [yLo, yHi] = niceBounds(allValues);
+
+      const W = 240, H = 108;
+      const padL = 26, padR = 6, padT = 10, padB = 16;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+
+      const xFor = i => padL + (i / (allLabels.length - 1)) * plotW;
+      const yFor = v => padT + plotH - ((v - yLo) / (yHi - yLo)) * plotH;
+
+      // Gridlines + y labels at low / mid / high of the rounded range.
+      const yTicks = [yLo, Math.round((yLo + yHi) / 2), yHi];
+      const gridlines = yTicks.map(t => `
+        <line x1="${padL}" x2="${W - padR}" y1="${yFor(t)}" y2="${yFor(t)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${padL - 6}" y="${yFor(t) + 3}" text-anchor="end" font-size="8" fill="var(--text-faint)">${t}%</text>
+      `).join('');
+
+      // Actual (graded) points — solid line, filled dots with a
+      // panel-bg ring so they stay legible crossing the gridlines.
+      const actualPts = hist.points.map((v, i) => [xFor(i), yFor(v)]);
+      const actualLine = actualPts.map(p => p.join(',')).join(' ');
+      const actualMarkers = actualPts.map(([x, y]) => `
+        <circle cx="${x}" cy="${y}" r="4" fill="${course.color}" stroke="var(--panel-bg)" stroke-width="2"/>
+      `).join('');
+
+      // Predicted point — dashed extrapolation segment + hollow marker,
+      // so it reads as projected rather than a sixth graded assignment.
+      const predX = xFor(allLabels.length - 1), predY = yFor(course.predictedPct);
+      const lastActual = actualPts[actualPts.length - 1];
+
+      // Shaded band for the projected segment spans the FULL plot height
+      // (top gridline to baseline) — a clean vertical "this part is
+      // projected" zone rather than an area-under-curve tied to the
+      // line's own shape. Filled with a diagonal-stripe pattern (not a
+      // flat wash) so it reads as "not real data yet" even at a glance
+      // or in grayscale/print, same idea as the dataviz texture channel
+      // — one direction (45°), tone-on-tone in the course's own color.
+      const predictedBand = `x="${lastActual[0]}" y="${padT}" width="${predX - lastActual[0]}" height="${plotH}"`;
+      const stripeDefs = `
+        <pattern id="predStripes" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="${course.color}" fill-opacity="0.08"/>
+          <line x1="0" y1="0" x2="0" y2="6" stroke="${course.color}" stroke-width="2.2"/>
+        </pattern>
+      `;
+
+      // X-axis category labels, one per assignment plus "Predicted".
+      const xLabels = allLabels.map((lab, i) => `
+        <text x="${xFor(i)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="var(--text-faint)">${lab === 'Predicted' ? 'Pred.' : lab}</text>
+      `).join('');
+
+      return `
+        <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Line chart of ${course.name} assignment scores trending toward a predicted grade of ${course.predictedPct} percent">
+          <defs>${stripeDefs}</defs>
+          ${gridlines}
+          <rect ${predictedBand} fill="url(#predStripes)" stroke="none"/>
+          <polyline points="${actualLine}" fill="none" stroke="${course.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="${lastActual[0]}" y1="${lastActual[1]}" x2="${predX}" y2="${predY}" stroke="${course.color}" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>
+          ${actualMarkers}
+          <circle cx="${predX}" cy="${predY}" r="4.5" fill="var(--panel-bg)" stroke="${course.color}" stroke-width="2"/>
+          <text x="${predX}" y="${predY - 10}" text-anchor="end" font-size="8.5" font-weight="800" fill="var(--text-dark)">${course.predictedPct}%</text>
+          ${xLabels}
+        </svg>
+      `;
+    }
+
+    const TREND_WORD = { up: 'Trending up', down: 'Trending down', flat: 'Holding steady' };
+
+    function renderGradePopup(course) {
+      const hist = HISTORY[course.id];
+      const first = hist.points[0], lastGraded = hist.points[hist.points.length - 1];
+      return `
+        <h3>${course.name}</h3>
+        <p class="popup-sub">${TREND_WORD[course.trend]}: <strong>${first}% → ${lastGraded}%</strong> over the last ${hist.points.length} graded assignments, predicting <strong>${course.predictedPct}%</strong> (${course.predicted}).</p>
+        ${buildGradeChartSVG(course)}
+        <p class="popup-foot">Predicted grade extrapolates this trend — not a copy of the current grade.</p>
+      `;
+    }
+
+    const gradePopup = document.getElementById('gradePopup');
+    let popupHideTimer = null;
+
+    function showGradePopup(trigger) {
+      clearTimeout(popupHideTimer);
+      const course = findCourse(trigger.dataset.course);
+      if (!course || !HISTORY[course.id]) return;
+      gradePopup.innerHTML = renderGradePopup(course);
+      gradePopup.classList.add('show');
+      trigger.setAttribute('aria-expanded', 'true');
+
+      // Position above the trigger by default; flip below if that
+      // would go off the top of the viewport. Clamp horizontally so
+      // it never overflows either edge.
+      const rect = trigger.getBoundingClientRect();
+      const popupRect = gradePopup.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - popupRect.width / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - popupRect.width - 10));
+      let top = rect.top - popupRect.height - 10;
+      if (top < 10) top = rect.bottom + 10;
+      gradePopup.style.left = `${left}px`;
+      gradePopup.style.top = `${top}px`;
+    }
+
+    function hideGradePopup() {
+      gradePopup.classList.remove('show');
+      document.querySelectorAll('.trend.has-popup[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+    }
+
+    function bindGradePopupTriggers() {
+      document.querySelectorAll('.trend.has-popup').forEach(trigger => {
+        trigger.addEventListener('mouseenter', () => showGradePopup(trigger));
+        trigger.addEventListener('focus', () => showGradePopup(trigger));
+        trigger.addEventListener('mouseleave', () => { popupHideTimer = setTimeout(hideGradePopup, 80); });
+        trigger.addEventListener('blur', hideGradePopup);
+        trigger.addEventListener('keydown', e => { if (e.key === 'Escape') { hideGradePopup(); trigger.blur(); } });
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // Customize editor — pencil FAB opens a small editor covering what
+    // this preview supports changing live: each course's display name,
+    // color, and order (used everywhere that course shows up — the
+    // Grades table, Today, Assignments, Messages); which optional
+    // widgets are on; and each widget's position/size within its column.
+    // Nothing here persists past a page reload yet (see
+    // architecture-decisions.md for what real persistence needs, and
+    // for the note about course order needing to carry over to a future
+    // Courses page too).
+    // ------------------------------------------------------------------
+    const widgetPrefs = { messages: false };
+
+    const editFab = document.getElementById('editFab');
+    const editorOverlay = document.getElementById('editorOverlay');
+    const editorCourseList = document.getElementById('editorCourseList');
+    const widgetMessagesToggle = document.getElementById('widgetMessagesToggle');
+    const messagesWidget = document.getElementById('block-messages');
+
+    // Drag-and-drop reorder: only mutate the DOM/array on 'drop', never
+    // on 'dragover' (which fires continuously as the mouse moves) — an
+    // element that gets removed/re-rendered out from under an in-progress
+    // native drag ends the drag immediately, so anything live-updating
+    // on dragover would break the gesture it's trying to support.
+    let draggedCourseIdx = null;
+
+    // Shared color-swatch popup — the SAME component (48-color grid,
+    // fixed-position, viewport-clamped) as onboarding.html's accent
+    // picker and course-home.html's course-color picker, per Martin's
+    // request for one consistent picker everywhere. Built ONCE here as a
+    // single floating popup reused across every course row (see
+    // #courseColorPopup in the HTML) — event delegation on
+    // editorCourseList below means it keeps working automatically after
+    // renderEditorCourseList() regenerates the row markup, no per-row
+    // re-binding needed the way the old per-row popover required.
+    const SWATCH_PALETTE = [
+      ['#e52e2e', '#e58a2e', '#e5e52e', '#8ae52e', '#2ee52e', '#2ee58a', '#2ee5e5', '#2e8ae5', '#2e2ee5', '#8a2ee5', '#e52ee5', '#e52e8a'],
+      ['#f1b1b1', '#f1d1b1', '#f1f1b1', '#d1f1b1', '#b1f1b1', '#b1f1d1', '#b1f1f1', '#b1d1f1', '#b1b1f1', '#d1b1f1', '#f1b1f1', '#f1b1d1'],
+      ['#812222', '#815222', '#818122', '#528122', '#228122', '#228152', '#228181', '#225281', '#222281', '#522281', '#812281', '#812252'],
+      ['#f5f5f5', '#e0e0e0', '#cccccc', '#b8b8b8', '#a3a3a3', '#8f8f8f', '#7a7a7a', '#666666', '#525252', '#3d3d3d', '#292929', '#141414'],
+    ];
+    function initSharedColorSwatchPopup(popup) {
+      let currentBtn = null;
+      let currentOnPick = null;
+      SWATCH_PALETTE.flat().forEach(hex => {
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'color-swatch-cell';
+        cell.style.background = hex;
+        cell.setAttribute('aria-label', hex);
+        cell.addEventListener('click', () => {
+          if (currentOnPick) currentOnPick(hex);
+          close();
+        });
+        popup.appendChild(cell);
+      });
+      function outsideClick(e) {
+        if (!popup.contains(e.target) && e.target !== currentBtn) close();
+      }
+      function onKeydown(e) {
+        if (e.key === 'Escape') close();
+      }
+      // Anchors under the trigger (right-aligned to it), flips above if
+      // there isn't room below, and clamps left/right/top to the
+      // viewport — same math as the single-trigger version of this
+      // component, plus the same transform-ancestor self-correction (a
+      // no-op here since the editor modal has no transform, but keeps
+      // this copy correct if that ever changes).
+      function reposition() {
+        if (!currentBtn) return;
+        const margin = 10;
+        const b = currentBtn.getBoundingClientRect();
+        const p = popup.getBoundingClientRect();
+        let left = b.right - p.width;
+        left = Math.min(left, window.innerWidth - p.width - margin);
+        left = Math.max(margin, left);
+        let top = b.bottom + 8;
+        if (top + p.height > window.innerHeight - margin) {
+          top = b.top - p.height - 8;
+          if (top < margin) top = margin;
+        }
+        popup.style.left = left + 'px';
+        popup.style.top = top + 'px';
+        const rendered = popup.getBoundingClientRect();
+        const dx = left - rendered.left;
+        const dy = top - rendered.top;
+        if (dx || dy) {
+          popup.style.left = (left + dx) + 'px';
+          popup.style.top = (top + dy) + 'px';
+        }
+      }
+      function open(btn, onPick) {
+        currentBtn = btn;
+        currentOnPick = onPick;
+        popup.classList.add('show');
+        btn.setAttribute('aria-expanded', 'true');
+        reposition();
+        document.addEventListener('click', outsideClick, true);
+        document.addEventListener('keydown', onKeydown);
+        window.addEventListener('scroll', reposition, true);
+        window.addEventListener('resize', reposition);
+      }
+      function close() {
+        if (currentBtn) currentBtn.setAttribute('aria-expanded', 'false');
+        popup.classList.remove('show');
+        currentBtn = null;
+        currentOnPick = null;
+        document.removeEventListener('click', outsideClick, true);
+        document.removeEventListener('keydown', onKeydown);
+        window.removeEventListener('scroll', reposition, true);
+        window.removeEventListener('resize', reposition);
+      }
+      return {
+        toggle(btn, onPick) {
+          if (currentBtn === btn) { close(); return; }
+          open(btn, onPick);
+        },
+        close,
+      };
+    }
+    const courseColorPopup = document.getElementById('courseColorPopup');
+    const sharedSwatchPopup = initSharedColorSwatchPopup(courseColorPopup);
+
+    function setCourseColor(i, hex, wrap) {
+      COURSES[i].color = hex;
+      saveCourseCustom(COURSES[i].id, { color: hex });
+      wrap.querySelector('.editor-course-swatch').style.background = hex;
+      refreshCourseDependentUI();
+    }
+    editorCourseList.addEventListener('click', e => {
+      const trigger = e.target.closest('.editor-course-swatch');
+      if (!trigger) return;
+      e.stopPropagation();
+      const wrap = trigger.closest('.color-swatch-wrap');
+      const i = +wrap.dataset.idx;
+      sharedSwatchPopup.toggle(trigger, hex => setCourseColor(i, hex, wrap));
+    });
+
+    function renderEditorCourseList() {
+      editorCourseList.innerHTML = COURSES.map((c, i) => `
+        <div class="editor-course-row" draggable="true" data-idx="${i}">
+          <span class="course-drag-handle" tabindex="0" role="button" aria-label="Drag to reorder ${c.name}, or focus and use arrow keys">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </span>
+          <div class="color-swatch-wrap" data-idx="${i}">
+            <button type="button" class="editor-course-swatch" style="background:${c.color}" aria-label="Change ${c.name} color" aria-haspopup="true" aria-expanded="false"></button>
+          </div>
+          <input type="text" class="editor-course-name" value="${c.name}" data-idx="${i}" aria-label="${c.name} name">
+        </div>
+      `).join('');
+
+      editorCourseList.querySelectorAll('.editor-course-name').forEach(input => {
+        input.addEventListener('input', () => {
+          const c = COURSES[+input.dataset.idx];
+          c.name = input.value.trim() || c.name;
+          saveCourseCustom(c.id, { name: c.name });
+          refreshCourseDependentUI();
+        });
+      });
+
+      // Keyboard equivalent to dragging, for anyone who can't drag with
+      // a mouse: focus the handle, then Arrow Up/Down moves that course.
+      editorCourseList.querySelectorAll('.course-drag-handle').forEach(handle => {
+        handle.addEventListener('keydown', e => {
+          const row = handle.closest('.editor-course-row');
+          const i = +row.dataset.idx;
+          let j = null;
+          if (e.key === 'ArrowUp') j = i - 1;
+          else if (e.key === 'ArrowDown') j = i + 1;
+          else return;
+          if (j < 0 || j >= COURSES.length) return;
+          e.preventDefault();
+          [COURSES[i], COURSES[j]] = [COURSES[j], COURSES[i]];
+          saveCourseOrder(COURSES.map(c => c.id));
+          renderEditorCourseList();
+          refreshCourseDependentUI();
+          editorCourseList.querySelectorAll('.course-drag-handle')[j].focus();
+        });
+      });
+    }
+
+    // dragstart is cancelled unless it began on the dot handle, so
+    // grabbing the color swatch or name input never starts a drag.
+    // Chromium reports dragstart's e.target as the draggable ancestor
+    // (the row) rather than the exact element the gesture began on, so
+    // the handle check has to happen on the preceding mousedown instead.
+    let courseDragAllowed = false;
+    editorCourseList.addEventListener('mousedown', e => {
+      courseDragAllowed = !!e.target.closest('.course-drag-handle');
+    });
+    // Live reorder preview: as the dragged row passes over another row,
+    // the rows in between visibly slide out of the way in real time
+    // (via a CSS transform, not a DOM move) instead of only jumping to
+    // their new spot once you let go. Only the dragged row's own DOM
+    // node stays untouched mid-drag — moving/removing it is what
+    // cancels a native drag — everything else here is just cosmetic
+    // transforms cleared again on drop or a cancelled drag.
+    //
+    // Which row the cursor is "over" is worked out from raw geometry
+    // (cursor Y vs. each row's original top, measured once at
+    // dragstart) rather than by hit-testing e.target — once other rows
+    // start sliding out of their layout box via transform, the row
+    // that's visually under the cursor is no longer necessarily the
+    // row whose *layout* box the cursor sits in, so element hit-testing
+    // stops lining up with the intended target partway through a drag.
+    let coursePreviewIdx = null;
+    let courseDragRowHeight = 0;
+    let courseListTopAtStart = 0;
+    editorCourseList.addEventListener('dragstart', e => {
+      if (!courseDragAllowed) { e.preventDefault(); return; }
+      const row = e.target.closest('.editor-course-row');
+      draggedCourseIdx = +row.dataset.idx;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      const rows = editorCourseList.querySelectorAll('.editor-course-row');
+      courseDragRowHeight = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : 0;
+      courseListTopAtStart = rows[0].getBoundingClientRect().top;
+    });
+    function courseIndexAtY(clientY) {
+      if (!courseDragRowHeight) return draggedCourseIdx;
+      const idx = Math.round((clientY - courseListTopAtStart) / courseDragRowHeight);
+      return Math.max(0, Math.min(COURSES.length - 1, idx));
+    }
+    function previewCourseOrder(targetIdx) {
+      if (targetIdx === coursePreviewIdx) return;
+      coursePreviewIdx = targetIdx;
+      const rh = courseDragRowHeight;
+      editorCourseList.querySelectorAll('.editor-course-row').forEach((row, idx) => {
+        if (idx === draggedCourseIdx) return;
+        let shift = 0;
+        if (draggedCourseIdx < targetIdx && idx > draggedCourseIdx && idx <= targetIdx) shift = -rh;
+        else if (draggedCourseIdx > targetIdx && idx < draggedCourseIdx && idx >= targetIdx) shift = rh;
+        row.style.transition = 'transform 150ms ease';
+        row.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+    }
+    function clearCoursePreview() {
+      editorCourseList.querySelectorAll('.editor-course-row').forEach(row => {
+        row.style.transition = '';
+        row.style.transform = '';
+      });
+      coursePreviewIdx = null;
+    }
+    editorCourseList.addEventListener('dragover', e => {
+      if (draggedCourseIdx === null) return;
+      e.preventDefault();
+      previewCourseOrder(courseIndexAtY(e.clientY));
+    });
+    editorCourseList.addEventListener('drop', e => {
+      if (draggedCourseIdx === null) return;
+      e.preventDefault();
+      const overIdx = coursePreviewIdx !== null ? coursePreviewIdx : courseIndexAtY(e.clientY);
+      if (overIdx !== draggedCourseIdx) {
+        const [moved] = COURSES.splice(draggedCourseIdx, 1);
+        COURSES.splice(overIdx, 0, moved);
+        saveCourseOrder(COURSES.map(c => c.id));
+        // The preview transforms already slid every row to roughly
+        // where it's about to land, so rebuilding the list here reads
+        // as the tail end of that same motion rather than a snap.
+        renderEditorCourseList();
+        refreshCourseDependentUI();
+      }
+      clearCoursePreview();
+    });
+    editorCourseList.addEventListener('dragend', () => {
+      editorCourseList.querySelectorAll('.editor-course-row.dragging').forEach(r => r.classList.remove('dragging'));
+      draggedCourseIdx = null;
+      clearCoursePreview();
+    });
+
+    // Anything that displays a course's name, color, or order needs to
+    // re-render when any of those change — the table, both assignment
+    // lists, Today, and the Messages widget (color ticks only; senders
+    // aren't tied to a course name). The reasoning popup reads live
+    // from COURSES on next open, so it needs no explicit refresh here.
+    function refreshCourseDependentUI() {
+      renderGradesTable();
+      renderAssignLists();
+      renderTodayList();
+      renderMessagesWidget();
+    }
+
+    function applyWidgetPrefs() {
+      messagesWidget.hidden = !widgetPrefs.messages;
+      widgetMessagesToggle.checked = widgetPrefs.messages;
+    }
+
+    // ------------------------------------------------------------------
+    // Reorder & resize widgets — the editor's button for this closes
+    // the editor and drags the actual widgets on the page instead of an
+    // abstracted list (see enterWidgetDragMode below). Each column
+    // (Grades+Today on the left, Assignments+Messages on the right) is
+    // an ordered list of widget ids; reordering re-appends the column's
+    // children in the new order (appendChild on an already-mounted node
+    // MOVES it, so this never loses state/listeners on the moved
+    // widget — including reparenting it into the OTHER column's list,
+    // which is a real DOM move, not just a reorder). A widget can trade
+    // places with ANY other widget, in either column, not just one in
+    // its own — see onWidgetDragMove/onWidgetDragUp below.
+    // ------------------------------------------------------------------
+    const WIDGET_LABELS = { grades: 'Grades', today: "Today's schedule", assignments: 'Assignments', messages: 'Messages' };
+    const BLOCK_EL = {
+      grades: document.getElementById('block-grades'),
+      today: document.getElementById('block-today'),
+      assignments: document.getElementById('block-assignments'),
+      messages: document.getElementById('block-messages'),
+    };
+    const ALL_WIDGET_IDS = Object.keys(BLOCK_EL);
+    const colLeftEl = document.getElementById('colLeft');
+    const colRightEl = document.getElementById('colRight');
+
+    let leftOrder = ['grades', 'today'];
+    let rightOrder = ['assignments', 'messages'];
+    const DEFAULT_LEFT_ORDER = [...leftOrder];
+    const DEFAULT_RIGHT_ORDER = [...rightOrder];
+
+    // Continuous scale (not a 3-tier preset) — driven live by dragging
+    // the corner resize handle, so "Standard" as a fixed name doesn't
+    // really apply anymore; 1 is the default/reset size.
+    let widgetSizes = { grades: 1, today: 1, assignments: 1, messages: 1 };
+    const DEFAULT_WIDGET_SIZES = { ...widgetSizes };
+    const RESIZE_MIN = 0.82, RESIZE_MAX = 1.3;
+
+    // Reordering animates into place with a FLIP (First-Last-Invert-
+    // Play): capture where every widget in the column currently is,
+    // reorder the DOM, then transform each one from its old spot back
+    // to 0 and let that transition play — so a swap always visibly
+    // moves rather than snapping, whether it came from a drag-drop or
+    // from Reset to default. If a widget already has a live drag-hover
+    // preview transform applied (see the drop handler below), that
+    // transform is what gets captured as its "old" position, so the
+    // hand-off from live preview to this animation is seamless. Tracks
+    // both axes (not just vertical) since a widget can now land in the
+    // OTHER column, which also means a horizontal jump — appendChild
+    // onto a column it wasn't already in reparents it for real, and the
+    // dx term is what bridges that visually instead of it just popping
+    // straight to the new column's X position.
+    function animateReorder(order, colEl) {
+      const first = {};
+      order.forEach(id => { first[id] = BLOCK_EL[id].getBoundingClientRect(); });
+      order.forEach(id => colEl.appendChild(BLOCK_EL[id]));
+      order.forEach(id => {
+        const el = BLOCK_EL[id];
+        el.style.transition = 'none';
+        el.style.transform = '';
+        const last = el.getBoundingClientRect();
+        const dx = first[id].left - last.left;
+        const dy = first[id].top - last.top;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+          requestAnimationFrame(() => {
+            el.style.transition = 'transform 200ms ease';
+            el.style.transform = '';
+          });
+        }
+      });
+    }
+    function applyColumnOrder() {
+      animateReorder(leftOrder, colLeftEl);
+      animateReorder(rightOrder, colRightEl);
+    }
+    function applyWidgetSizes() {
+      Object.keys(widgetSizes).forEach(id => {
+        BLOCK_EL[id].style.zoom = widgetSizes[id];
+        // Keep the resize handle's slider value in sync for screen
+        // readers — role="slider" without a current aria-valuenow only
+        // ever announces the min/max range, never where it actually is.
+        const handle = BLOCK_EL[id].querySelector('.widget-resize-handle');
+        if (handle) handle.setAttribute('aria-valuenow', Math.round(widgetSizes[id] * 100));
+      });
+    }
+
+    // ------------------------------------------------------------------
+    // On-page widget drag mode
+    // ------------------------------------------------------------------
+    let widgetDragModeOn = false;
+    // Single object tracking the widget currently being mouse-dragged
+    // (null when nothing is): { id, rects, startX, startY, targetId,
+    // moved }. See onWidgetDragMove/onWidgetDragUp.
+    let widgetDrag = null;
+    const dragDoneBtn = document.getElementById('dragDoneBtn');
+
+    function resizeHandleHTML(id, corner) {
+      return `<span class="widget-resize-handle" data-corner="${corner}" role="slider" tabindex="0" aria-label="Resize ${WIDGET_LABELS[id]}, or focus and use arrow keys" aria-valuemin="${Math.round(RESIZE_MIN * 100)}" aria-valuemax="${Math.round(RESIZE_MAX * 100)}" aria-valuenow="${Math.round(widgetSizes[id] * 100)}"><span class="wrh-ring"></span><span class="wrh-nub"></span></span>`;
+    }
+
+    let resizing = null; // { id, corner, startX, startY, startScale }
+    function onResizeMove(e) {
+      if (!resizing) return;
+      const dx = e.clientX - resizing.startX;
+      const dy = e.clientY - resizing.startY;
+      // "Outward" (growing) is down-right for a bottom-right handle and
+      // down-left for a bottom-left one — project the mouse movement
+      // onto that diagonal so dragging away from the widget grows it
+      // and dragging back toward it shrinks it, from either handle.
+      const outwardX = resizing.corner === 'br' ? dx : -dx;
+      const projected = (outwardX + dy) / 2;
+      const scale = resizing.startScale + projected / 260;
+      widgetSizes[resizing.id] = Math.min(RESIZE_MAX, Math.max(RESIZE_MIN, scale));
+      applyWidgetSizes();
+    }
+    function onResizeUp() {
+      resizing = null;
+      document.removeEventListener('mousemove', onResizeMove);
+      document.removeEventListener('mouseup', onResizeUp);
+    }
+    function attachResizeHandle(id, handle) {
+      handle.addEventListener('mousedown', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizing = { id, corner: handle.dataset.corner, startX: e.clientX, startY: e.clientY, startScale: widgetSizes[id] };
+        document.addEventListener('mousemove', onResizeMove);
+        document.addEventListener('mouseup', onResizeUp);
+      });
+      // Keyboard equivalent, same idea as the course drag handle's
+      // Arrow-key reordering: focus the handle, then Arrow keys resize.
+      handle.addEventListener('keydown', e => {
+        let delta = 0;
+        if (e.key === 'ArrowUp' || e.key === 'ArrowRight') delta = 0.04;
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') delta = -0.04;
+        else return;
+        e.preventDefault();
+        widgetSizes[id] = Math.min(RESIZE_MAX, Math.max(RESIZE_MIN, widgetSizes[id] + delta));
+        applyWidgetSizes();
+      });
+    }
+
+    function widgetColumnOrder(id) {
+      return leftOrder.includes(id) ? leftOrder : rightOrder;
+    }
+
+    // Rect of every VISIBLE widget, center included — hidden ones (the
+    // Messages widget when its toggle is off) are excluded entirely,
+    // since a hidden element's rect collapses to 0×0 at (0,0) and would
+    // otherwise falsely win every "nearest widget" comparison near the
+    // top-left of the viewport.
+    function visibleWidgetIds() {
+      return ALL_WIDGET_IDS.filter(id => !BLOCK_EL[id].hidden);
+    }
+    function widgetRect(id) {
+      const r = BLOCK_EL[id].getBoundingClientRect();
+      return { top: r.top, left: r.left, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+
+    function onWidgetDragMove(e) {
+      if (!widgetDrag) return;
+      const totalDx = e.clientX - widgetDrag.startX;
+      const totalDy = e.clientY - widgetDrag.startY;
+      if (!widgetDrag.moved) {
+        // Small threshold so a plain click (no real movement) doesn't
+        // register as a drag — nothing to preview or commit either way.
+        if (Math.hypot(totalDx, totalDy) < 4) return;
+        widgetDrag.moved = true;
+        BLOCK_EL[widgetDrag.id].style.transition = 'none';
+        BLOCK_EL[widgetDrag.id].classList.add('dragging');
+      }
+      e.preventDefault();
+      const { id, rects } = widgetDrag;
+      BLOCK_EL[id].style.transform = `translate(${totalDx}px, ${totalDy}px)`;
+
+      // Widgets can trade places with ANY other widget now, in either
+      // column, not just one in their own — so instead of "did you
+      // cross the one other widget in this column," the rule is
+      // "which widget (across the whole card) is your current center
+      // now nearest to." Comparing against the dragged widget's OWN
+      // original slot too (not just the others) gives the same
+      // hysteresis the old same-column version had for free: nothing
+      // is targeted, and nothing previews, until you've actually
+      // dragged closer to some other widget than to where you started.
+      const draggedCenter = { x: rects[id].x + totalDx, y: rects[id].y + totalDy };
+      let nearestId = id, nearestDist = Infinity;
+      Object.keys(rects).forEach(wid => {
+        const d = Math.hypot(rects[wid].x - draggedCenter.x, rects[wid].y - draggedCenter.y);
+        if (d < nearestDist) { nearestDist = d; nearestId = wid; }
+      });
+      const newTargetId = nearestId === id ? null : nearestId;
+      if (newTargetId !== widgetDrag.targetId) {
+        if (widgetDrag.targetId) {
+          const prevEl = BLOCK_EL[widgetDrag.targetId];
+          prevEl.style.transition = '';
+          prevEl.style.transform = '';
+        }
+        widgetDrag.targetId = newTargetId;
+        if (newTargetId) {
+          // The target widget previews sliding into the dragged
+          // widget's ORIGINAL slot — a real swap, not a same-column
+          // shuffle, so this can carry it across into the other column
+          // too (see animateReorder's dx handling for the real move).
+          const targetEl = BLOCK_EL[newTargetId];
+          const dx = rects[id].left - rects[newTargetId].left;
+          const dy = rects[id].top - rects[newTargetId].top;
+          targetEl.style.transition = 'transform 150ms ease';
+          targetEl.style.transform = `translate(${dx}px, ${dy}px)`;
+        }
+      }
+    }
+
+    function onWidgetDragUp() {
+      if (!widgetDrag) return;
+      const { id, targetId, moved } = widgetDrag;
+      document.removeEventListener('mousemove', onWidgetDragMove);
+      document.removeEventListener('mouseup', onWidgetDragUp);
+      BLOCK_EL[id].classList.remove('dragging');
+
+      if (moved && targetId) {
+        const sourceOrder = widgetColumnOrder(id);
+        const targetOrder = widgetColumnOrder(targetId);
+        const fromIdx = sourceOrder.indexOf(id);
+        const targetIdx = targetOrder.indexOf(targetId);
+        sourceOrder[fromIdx] = targetId;
+        targetOrder[targetIdx] = id;
+        // If they swapped across columns, each widget's resize handle
+        // (bottom-right in the left column, bottom-left in the right —
+        // see resizeHandleHTML) needs to flip sides to keep facing the
+        // middle of the page in its new column.
+        if (sourceOrder !== targetOrder) {
+          const idHandle = BLOCK_EL[id].querySelector('.widget-resize-handle');
+          const targetHandle = BLOCK_EL[targetId].querySelector('.widget-resize-handle');
+          if (idHandle) idHandle.dataset.corner = leftOrder.includes(id) ? 'br' : 'bl';
+          if (targetHandle) targetHandle.dataset.corner = leftOrder.includes(targetId) ? 'br' : 'bl';
+        }
+      }
+      widgetDrag = null;
+      // FLIP: captures wherever every widget currently sits (including
+      // mid-drag, off-grid pixel offsets, and a widget that's about to
+      // be reparented into the other column) as "first", then eases
+      // each into its real slot — a no-op drag (didn't cross the
+      // threshold, or dragged and released with no target) just settles
+      // straight back with no visible jump either way.
+      applyColumnOrder();
+    }
+
+    function startWidgetDrag(id, e) {
+      const rects = {};
+      visibleWidgetIds().forEach(wid => { rects[wid] = widgetRect(wid); });
+      widgetDrag = {
+        id, rects,
+        startX: e.clientX, startY: e.clientY,
+        targetId: null,
+        moved: false,
+      };
+      document.addEventListener('mousemove', onWidgetDragMove);
+      document.addEventListener('mouseup', onWidgetDragUp);
+    }
+
+    // Mouse-based dragging (see the note above .widget-block.drag-mode.
+    // dragging in <style> for why this replaced native HTML5 drag-and-
+    // drop) — initiated by grabbing anywhere on a widget except the
+    // resize handle, whose own mousedown handler already stops this one
+    // via stopPropagation (the closest() check here is defense-in-
+    // depth). Attached ONCE at setup rather than inside
+    // enterWidgetDragMode, which used to re-add a fresh listener on
+    // every entry into drag mode — each one gated by the runtime
+    // `widgetDragModeOn` flag instead — since Reorder & resize widgets
+    // can be opened and closed repeatedly in one session and re-adding
+    // listeners every time would stack duplicates, firing
+    // startWidgetDrag (and its own document-level mousemove/mouseup
+    // listeners) more than once per drag after a couple of cycles.
+    Object.keys(BLOCK_EL).forEach(id => {
+      BLOCK_EL[id].addEventListener('mousedown', e => {
+        if (!widgetDragModeOn) return;
+        if (e.target.closest('.widget-resize-handle')) return;
+        if (e.button !== 0) return;
+        e.preventDefault();
+        startWidgetDrag(id, e);
+      });
+    });
+
+    function enterWidgetDragMode() {
+      widgetDragModeOn = true;
+      closeEditor();
+      Object.keys(BLOCK_EL).forEach(id => {
+        const el = BLOCK_EL[id];
+        el.classList.add('drag-mode');
+        const corner = leftOrder.includes(id) ? 'br' : 'bl';
+        el.insertAdjacentHTML('beforeend', resizeHandleHTML(id, corner));
+        attachResizeHandle(id, el.querySelector('.widget-resize-handle'));
+      });
+      editFab.hidden = true;
+      dragDoneBtn.hidden = false;
+    }
+
+    function exitWidgetDragMode() {
+      widgetDragModeOn = false;
+      widgetDrag = null;
+      document.removeEventListener('mousemove', onWidgetDragMove);
+      document.removeEventListener('mouseup', onWidgetDragUp);
+      Object.keys(BLOCK_EL).forEach(id => {
+        const el = BLOCK_EL[id];
+        el.classList.remove('drag-mode', 'dragging');
+        el.style.transform = '';
+        el.style.transition = '';
+        const handle = el.querySelector('.widget-resize-handle');
+        if (handle) handle.remove();
+      });
+      editFab.hidden = false;
+      dragDoneBtn.hidden = true;
+      openEditor();
+    }
+
+    document.getElementById('widgetReorderToggle').addEventListener('click', enterWidgetDragMode);
+    dragDoneBtn.addEventListener('click', exitWidgetDragMode);
+
+    function openEditor() {
+      renderEditorCourseList();
+      editorOverlay.classList.add('show');
+    }
+    function closeEditor() {
+      editorOverlay.classList.remove('show');
+    }
+
+    editFab.addEventListener('click', openEditor);
+    document.getElementById('editorClose').addEventListener('click', closeEditor);
+    document.getElementById('editorDone').addEventListener('click', closeEditor);
+    editorOverlay.addEventListener('click', e => { if (e.target === editorOverlay) closeEditor(); });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && editorOverlay.classList.contains('show')) closeEditor();
+    });
+
+    widgetMessagesToggle.addEventListener('change', () => {
+      widgetPrefs.messages = widgetMessagesToggle.checked;
+      applyWidgetPrefs();
+    });
+
+    document.getElementById('editorReset').addEventListener('click', () => {
+      // Restore both the array's CONTENTS and its ORDER to the true
+      // hardcoded defaults — a plain per-index Object.assign (the old
+      // behavior) only overwrote each slot's fields, so a course that
+      // had been reordered kept its new position but got a different
+      // course's id/name/color pasted into it. Clearing and repopulating
+      // in DEFAULT_COURSES's own order (rather than reassigning COURSES
+      // itself) keeps every other closure's reference to this same array
+      // valid, matching how the rest of the editor mutates COURSES in
+      // place. Also clears the persisted customization/order so a future
+      // reload doesn't bring the just-reset state right back.
+      COURSES.length = 0;
+      DEFAULT_COURSES.forEach(c => COURSES.push(JSON.parse(JSON.stringify(c))));
+      clearCourseCustomizations();
+      widgetPrefs.messages = DEFAULT_WIDGETS.messages;
+      leftOrder = [...DEFAULT_LEFT_ORDER];
+      rightOrder = [...DEFAULT_RIGHT_ORDER];
+      widgetSizes = { ...DEFAULT_WIDGET_SIZES };
+      refreshCourseDependentUI();
+      applyWidgetPrefs();
+      applyColumnOrder();
+      applyWidgetSizes();
+      renderEditorCourseList();
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — Settings / Sign out. Front-end only, same as the
+    // bottom nav: no real page exists to navigate to yet, so this just
+    // opens/closes the menu rather than performing either action.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
+    const profileMenu = document.getElementById('profileMenu');
+
+    function openProfileMenu() {
+      profileMenu.hidden = false;
+      profileBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeProfileMenu() {
+      profileMenu.hidden = true;
+      profileBtn.setAttribute('aria-expanded', 'false');
+    }
+    profileBtn.addEventListener('click', () => {
+      if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu();
+    });
+    document.addEventListener('click', e => {
+      if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); }
+    });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Initial render
+    // ------------------------------------------------------------------
+    renderGradesTable();
+    renderAssignLists();
+    renderTodayList();
+    renderMessagesWidget();
+    applyWidgetPrefs();
+    applyColumnOrder();
+    applyWidgetSizes();
+  </script>
+</body>
+</html>
