@@ -979,7 +979,7 @@
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">Weekly Grade Summary</p>
-                  <p class="settings-row-desc">A recap of grade changes, sent every Sunday. Most schools leave this off by default — turning it on needs an email on file.</p>
+                  <p class="settings-row-desc" id="weeklyGradeSummaryDesc">A recap of grade changes, sent every Sunday. Most schools leave this off by default — turning it on needs an email on file and Sync Across Devices turned on.</p>
                 </div>
                 <label class="toggle"><input type="checkbox" id="weeklyGradeSummaryToggle"><span class="track"><span class="thumb"></span></span></label>
               </div>
@@ -1024,9 +1024,9 @@
               <div class="settings-row">
                 <div class="settings-row-text">
                   <p class="settings-row-label">Sync Customizations Across Devices</p>
-                  <p class="settings-row-desc">Allow Schoolagy.io to keep your unique ID so your customizations sync to your other devices.</p>
+                  <p class="settings-row-desc" id="syncAcrossDevicesDesc">Allow Schoolagy.io to keep your unique ID so your customizations sync to your other devices.</p>
                 </div>
-                <label class="toggle"><input type="checkbox" id="syncAcrossDevicesToggle" checked><span class="track"><span class="thumb"></span></span></label>
+                <label class="toggle"><input type="checkbox" id="syncAcrossDevicesToggle"><span class="track"><span class="thumb"></span></span></label>
               </div>
             </div>
           </div>
@@ -1110,6 +1110,29 @@
     </div>
   </div>
 
+  <!-- ---------- "Turn on sync first" nudge (2026-09-08) — shown when
+       Weekly Grade Summary is switched on but Sync Across Devices isn't.
+       The weekly email is generated server-side with no browser open to
+       ask, so it needs a synced per-user record both to know who's opted
+       in and to hold the GPA history the email's own "vs last week" line
+       reads from. Same shape as the email nudge above, one action button
+       instead of two states. ---------- -->
+  <div class="editor-overlay" id="syncRequiredOverlay">
+    <div class="editor-modal" role="dialog" aria-modal="true" aria-labelledby="syncRequiredTitle" style="max-width: 340px;">
+      <div class="editor-head">
+        <h2 id="syncRequiredTitle">Turn on sync first</h2>
+        <button class="editor-close" id="syncRequiredClose" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="editor-body" style="padding-bottom: 16px;">
+        <p class="settings-row-desc" style="font-size: 0.86rem;">Weekly Grade Summary needs Sync Across Devices turned on — that's what lets Schoolagy keep last week's grade snapshot to compare this week's against.</p>
+      </div>
+      <div class="editor-actions">
+        <button class="editor-reset" id="syncRequiredCancel" type="button">Not now</button>
+        <button class="editor-done" id="syncRequiredEnable" type="button">Turn On Sync</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ---------- Verify Email — mock verification step. No real backend
        to send mail through, so "verifying" is simulated: clicking
        "Verify Email" stands in for opening the emailed link, then the
@@ -1183,7 +1206,7 @@
         <button class="editor-close" id="syncOffConfirmClose" type="button" aria-label="Close">&times;</button>
       </div>
       <div class="editor-body" style="padding-bottom: 16px;">
-        <p class="settings-row-desc" style="font-size: 0.86rem;">Your customizations (theme, background, accent color, and other settings) won't sync to your other devices anymore. Anything already on this device stays as-is.</p>
+        <p class="settings-row-desc" id="syncOffConfirmBody" style="font-size: 0.86rem;">Your customizations (theme, background, accent color, and other settings) won't sync to your other devices anymore, and what's already saved to Schoolagy.io's servers under your account gets deleted. Anything already on this device stays as-is.</p>
       </div>
       <div class="editor-actions">
         <button class="editor-reset" id="syncOffConfirmCancel" type="button">Cancel</button>
@@ -1402,6 +1425,7 @@
     }
     function schoolagySetDarkPref(isDark) {
       try { localStorage.setItem(SCHOOLAGY_DARK_MODE_KEY, isDark ? 'dark' : 'light'); } catch {}
+      schedulePushSyncSettings();
     }
     const darkModeToggle = document.getElementById('darkModeToggle');
     function applyDarkMode(isDark) {
@@ -1467,7 +1491,30 @@
         opts[key] = value;
         localStorage.setItem(SCHOOLAGY_SETTINGS_OPTIONS_KEY, JSON.stringify(opts));
       } catch {}
+      schedulePushSyncSettings();
     }
+
+    // ------------------------------------------------------------------
+    // The signed-in mode ('live' or 'demo') — set by LegacyPage.tsx before
+    // this page's own script runs, from the server's own answer to
+    // /auth/me. Read once, here, near the top, because it gates two things
+    // below that both need to know it before they render: the Sync Across
+    // Devices / Weekly Grade Summary toggles (2026-09-08, real server sync —
+    // see the block near the bottom of this script) can't work for a demo
+    // session, which has no real Schoology uid for the API to key a stored
+    // record on. This is the same server-verified signal every other
+    // server-gated feature already trusts (schoolagy-api refuses these same
+    // two endpoints — /sync/settings and, indirectly, whatever eventually
+    // sends the email — with a 403 for a demo session regardless of what
+    // this page does), so disabling the toggles here is a UX courtesy on
+    // top of a real server-side gate, not the gate itself.
+    //
+    // Deliberately a separate global from the one the data-driven pages
+    // read (see LegacyPage.tsx's own comment next to where it's set) —
+    // this page only needs the mode flag, not a real data bundle.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_MODE = window.__SCHOOLAGY_MODE__ || 'live';
+    const SCHOOLAGY_SYNC_UNAVAILABLE = SCHOOLAGY_MODE === 'demo';
     const settingsOptions = loadSettingsOptions();
 
     // ------------------------------------------------------------------
@@ -1595,6 +1642,7 @@
           background: currentBackgroundValue,
         }));
       } catch {}
+      schedulePushSyncSettings();
     }
     const savedAppearance = loadAppearance();
     if (savedAppearance) {
@@ -2033,6 +2081,7 @@
     }
     function saveProfileState() {
       try { localStorage.setItem(SCHOOLAGY_PROFILE_KEY, JSON.stringify(profileState)); } catch {}
+      schedulePushSyncSettings();
     }
     const profileState = loadProfileState();
     const profileCardName = document.getElementById('profileCardName');
@@ -2147,9 +2196,23 @@
     const weeklyGradeSummaryToggle = document.getElementById('weeklyGradeSummaryToggle');
     // Persisted via schoolagy_settings_options as of 2026-09-08. Still
     // gated behind a verified email on every load, same as the toggle
-    // logic below — a saved "on" from before doesn't override that.
-    weeklyGradeSummaryToggle.checked = settingsOptions.weeklyGradeSummary === true
-      && !!profileState.email && profileState.emailVerified;
+    // logic below — a saved "on" from before doesn't override that. As of
+    // 2026-09-08 it's also gated behind Sync Across Devices being on (see
+    // the rule below and the "Turn on sync first" nudge): the weekly email
+    // is generated server-side, with no browser open to ask, so it needs a
+    // synced per-user record to know who's opted in and to hold the GPA
+    // history the email's "vs last week" line reads from — an account with
+    // sync off has neither, so a stale "on" from before sync was turned off
+    // must not survive a reload.
+    weeklyGradeSummaryToggle.checked = !SCHOOLAGY_SYNC_UNAVAILABLE
+      && settingsOptions.weeklyGradeSummary === true
+      && !!profileState.email && profileState.emailVerified
+      && settingsOptions.syncAcrossDevices !== false;
+    if (SCHOOLAGY_SYNC_UNAVAILABLE) {
+      weeklyGradeSummaryToggle.disabled = true;
+      const desc = document.getElementById('weeklyGradeSummaryDesc');
+      if (desc) desc.textContent = 'Not available on the demo account — this sends real email to a real account.';
+    }
     const emailNudgeOverlay = document.getElementById('emailNudgeOverlay');
     const emailNudgeTitle = document.getElementById('emailNudgeTitle');
     const emailNudgeBody = document.getElementById('emailNudgeBody');
@@ -2245,6 +2308,7 @@
     profileCardVerifyBtn.addEventListener('click', openEmailVerifyModal);
 
     weeklyGradeSummaryToggle.addEventListener('change', () => {
+      if (SCHOOLAGY_SYNC_UNAVAILABLE) { weeklyGradeSummaryToggle.checked = false; return; } // belt-and-suspenders — the control is also .disabled
       if (!weeklyGradeSummaryToggle.checked) { saveSettingsOption('weeklyGradeSummary', false); return; } // turning it off never needs gating
       if (!profileState.email) {
         weeklyGradeSummaryToggle.checked = false;
@@ -2256,6 +2320,16 @@
         openEmailNudge();
         return;
       }
+      // Added 2026-09-08: needs Sync Across Devices on too — see the const's
+      // comment above for why. Checked last, after the email gates, so
+      // someone who needs to fix both sees the email nudge first (the more
+      // familiar, already-existing ask) rather than being sent back and
+      // forth between two modals for two different missing things at once.
+      if (!isSyncOn()) {
+        weeklyGradeSummaryToggle.checked = false;
+        openSyncRequiredNudge();
+        return;
+      }
       saveSettingsOption('weeklyGradeSummary', true);
     });
 
@@ -2265,6 +2339,7 @@
       if (emailNudgeOverlay.classList.contains('show')) closeEmailNudge();
       if (emailVerifyOverlay.classList.contains('show')) closeEmailVerifyModal();
       if (syncOffConfirmOverlay.classList.contains('show')) closeSyncOffConfirm();
+      if (syncRequiredOverlay.classList.contains('show')) { pendingWeeklySummaryEnable = false; closeSyncRequiredNudge(); }
       if (notificationAccessOverlay.classList.contains('show')) {
         if (pendingPushToggle) pendingPushToggle.checked = false;
         pendingPushToggle = null;
@@ -2372,30 +2447,247 @@
     updatePushPermissionNote();
 
     // ------------------------------------------------------------------
-    // Sync Customizations Across Devices — turning it OFF is confirmed
-    // first, since it's a "your other devices stop matching this one"
-    // change rather than a purely cosmetic toggle. Turning it back on
-    // needs no confirmation.
+    // Sync Across Devices — real server-backed sync, added 2026-09-08.
+    //
+    // Before this, the toggle only remembered its own on/off state
+    // locally (see the "no options save basically" comment up near
+    // saveSettingsOption) — nothing was actually kept anywhere a second
+    // device could read. Now, whenever this is on, every write this page
+    // makes through saveSettingsOption/schoolagySetDarkPref/
+    // persistAppearance/saveProfileState also pushes a merged snapshot to
+    // schoolagy-api's /sync/settings (see schedulePushSyncSettings, called
+    // from inside each of those four functions — one shared hook instead
+    // of hunting down every call site), and on load this page pulls
+    // whatever's stored there and adopts it if it differs from what's
+    // already on this device.
+    //
+    // Scope, deliberately: this syncs exactly what THIS page owns —
+    // schoolagy_settings_options, schoolagy_appearance, schoolagy_dark_mode,
+    // schoolagy_profile. Course customizations/reordering
+    // (schoolagy_course_custom/schoolagy_course_order) are written from
+    // Home/Courses, not here, and aren't part of this pass — a natural
+    // next increment (add their keys to collectSyncedSettings/
+    // applySyncedSettings below, and the same four-function push hook to
+    // wherever those two pages save), not a redesign.
+    //
+    // Turning it OFF is confirmed first, same as before — still a "your
+    // other devices stop matching this one" change, not a cosmetic toggle
+    // — but the confirmation now also has to cover a second consequence:
+    // Weekly Grade Summary requires this to be on (see the toggle above),
+    // so turning sync off turns that off too if it was on. The confirm
+    // body's copy is rewritten right before showing it, to actually say so
+    // when it applies, rather than only ever showing the generic version.
     // ------------------------------------------------------------------
     const syncAcrossDevicesToggle = document.getElementById('syncAcrossDevicesToggle');
-    // Persisted via schoolagy_settings_options as of 2026-09-08. Defaults
-    // to on (matches the HTML's `checked` attribute) when nothing's been
-    // saved yet — only an explicit saved `false` turns it off on load.
-    syncAcrossDevicesToggle.checked = settingsOptions.syncAcrossDevices !== false;
     const syncOffConfirmOverlay = document.getElementById('syncOffConfirmOverlay');
+    const syncOffConfirmBody = document.getElementById('syncOffConfirmBody');
+    const SYNC_OFF_BODY_DEFAULT = syncOffConfirmBody.textContent;
+    const SYNC_OFF_BODY_WITH_WEEKLY = SYNC_OFF_BODY_DEFAULT + ' Weekly Grade Summary needs sync to be on, so that turns off too.';
+
+    if (SCHOOLAGY_SYNC_UNAVAILABLE) {
+      // Demo has no real Schoology uid for the API to key a stored record
+      // on, and /sync/settings refuses demo sessions server-side regardless
+      // (403 not_available_in_demo) — this just keeps a demo visitor from
+      // flipping a toggle that could never actually do anything.
+      syncAcrossDevicesToggle.checked = false;
+      syncAcrossDevicesToggle.disabled = true;
+      const desc = document.getElementById('syncAcrossDevicesDesc');
+      if (desc) desc.textContent = 'Not available on the demo account — there\'s no real account for it to sync to.';
+    } else {
+      // Persisted via schoolagy_settings_options. Defaults to OFF — this
+      // is an opt-in "let Schoolagy.io keep your unique ID" toggle (see
+      // its own row description), and nothing should get pushed to the
+      // server for someone who never actually asked for cross-device
+      // sync. Only an explicit saved `true` turns it on.
+      //
+      // Fixed 2026-09-09 (per Martin: "the sync setting is auto on even
+      // tho i didn't turn it on at all"). This used to default to on
+      // (matching the HTML's own `checked` attribute, now removed) —
+      // which was worse than just a surprising default: this toggle and
+      // isSyncOn() below disagreed with the server's own
+      // syncEnabledIn() (schoolagy-api/src/sync.ts), which has always
+      // required an explicit `=== true`. So the UI showed sync as ON
+      // for every user by default while the API silently treated them
+      // as OFF (no GPA snapshots recorded, /data/bundle never wrote
+      // anything) — the toggle was lying about what was actually
+      // happening. Both sides now agree: off until explicitly turned on.
+      syncAcrossDevicesToggle.checked = settingsOptions.syncAcrossDevices === true;
+    }
+
+    function isSyncOn() {
+      if (SCHOOLAGY_SYNC_UNAVAILABLE) return false;
+      return loadSettingsOptions().syncAcrossDevices === true;
+    }
+
+    function schoolagyApiBase() {
+      // Mirrors app/lib/schoolagy.ts's API_BASE — this app has no shared
+      // external JS file (see the single-file-per-page note elsewhere in
+      // this doc/repo), so it's duplicated here rather than imported.
+      // schoolagy.io only, as of 2026-09-08 (a brief sch00lagy.com
+      // second-domain fallback was removed — see API_BASE's own comment in
+      // schoolagy.ts for why).
+      return window.location.hostname.endsWith('schoolagy.io') ? 'https://api.schoolagy.io' : 'http://localhost:8787';
+    }
+
+    // What actually gets synced — see the scope note above.
+    function collectSyncedSettings() {
+      const readJSON = (key) => {
+        try {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+      };
+      let darkMode = null;
+      try { darkMode = localStorage.getItem(SCHOOLAGY_DARK_MODE_KEY); } catch {}
+      return {
+        settingsOptions: readJSON(SCHOOLAGY_SETTINGS_OPTIONS_KEY),
+        appearance: readJSON(SCHOOLAGY_APPEARANCE_KEY),
+        darkMode,
+        profile: readJSON(SCHOOLAGY_PROFILE_KEY),
+      };
+    }
+    function applySyncedSettings(remote) {
+      if (!remote || typeof remote !== 'object') return;
+      try {
+        if (remote.settingsOptions) localStorage.setItem(SCHOOLAGY_SETTINGS_OPTIONS_KEY, JSON.stringify(remote.settingsOptions));
+        if (remote.appearance) localStorage.setItem(SCHOOLAGY_APPEARANCE_KEY, JSON.stringify(remote.appearance));
+        if (remote.darkMode) localStorage.setItem(SCHOOLAGY_DARK_MODE_KEY, remote.darkMode);
+        if (remote.profile) localStorage.setItem(SCHOOLAGY_PROFILE_KEY, JSON.stringify(remote.profile));
+      } catch {}
+    }
+
+    // Debounced so a burst of writes (dragging the accent-color picker,
+    // say) becomes one PUT instead of one per pixel.
+    let syncPushTimer = null;
+    function schedulePushSyncSettings() {
+      if (!isSyncOn()) return;
+      clearTimeout(syncPushTimer);
+      syncPushTimer = setTimeout(pushSyncSettingsNow, 800);
+    }
+    async function pushSyncSettingsNow() {
+      if (!isSyncOn()) return;
+      try {
+        await fetch(schoolagyApiBase() + '/sync/settings', {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: collectSyncedSettings() }),
+        });
+      } catch {
+        // Offline or the API's unreachable — this device's own localStorage
+        // is still correct for THIS device; the next successful save (or
+        // the next load's pull-and-diff below) will catch it up.
+      }
+    }
+    // Turning sync off is a real "forget me," not just "stop asking" —
+    // added 2026-09-09 per Martin ("if they turn it off the data gets
+    // deleted"). Before this, turning the toggle off only ever flipped the
+    // local `syncAcrossDevices` flag — whatever had last been pushed (the
+    // settings blob AND the GPA-history snapshots piggybacked on
+    // /data/bundle) just sat in the server's KV record under this account
+    // indefinitely, and turning sync back on later would have silently
+    // pulled that stale record back down. Called from the turn-off
+    // confirm's click handler below, not gated on isSyncOn() the way
+    // push/pull are — it needs to run exactly when sync is BEING turned
+    // off, i.e. while it's still (about to stop being) on.
+    async function deleteSyncSettingsNow() {
+      try {
+        await fetch(schoolagyApiBase() + '/sync/settings', { method: 'DELETE', credentials: 'include' });
+      } catch {
+        // Offline or the API's unreachable — this device is turning sync
+        // off either way; nothing left to do here but not block on it.
+      }
+    }
+    // Runs once, near the end of this script (see the Initial render
+    // section below): if sync is on, ask the server what it has. Nothing
+    // stored yet means this is the first device to ever sync — push this
+    // device's current state up to seed it. Something stored that already
+    // matches this device needs no action. Something stored that DIFFERS
+    // means another device saved something since this one last loaded —
+    // adopt it and reload once so every already-rendered control (toggles,
+    // accent color, dark mode, the profile card) repaints from the now-
+    // current values instead of this page needing to duplicate every one
+    // of those render calls a second time here.
+    async function pullSyncSettingsNow() {
+      if (!isSyncOn()) return;
+      try {
+        const res = await fetch(schoolagyApiBase() + '/sync/settings', { credentials: 'include' });
+        if (!res.ok) return;
+        const record = await res.json();
+        if (!record || !record.settings) {
+          pushSyncSettingsNow();
+          return;
+        }
+        const remote = JSON.stringify(record.settings);
+        const local = JSON.stringify(collectSyncedSettings());
+        if (remote === local) return;
+        applySyncedSettings(record.settings);
+        window.location.reload();
+      } catch {
+        // No network / API down — render from whatever's already local.
+      }
+    }
+
     function closeSyncOffConfirm() { syncOffConfirmOverlay.classList.remove('show'); }
     syncAcrossDevicesToggle.addEventListener('change', () => {
       if (syncAcrossDevicesToggle.checked) { saveSettingsOption('syncAcrossDevices', true); return; } // turning on never needs confirming
       syncAcrossDevicesToggle.checked = true; // hold it on until the user actually confirms
+      syncOffConfirmBody.textContent = weeklyGradeSummaryToggle.checked ? SYNC_OFF_BODY_WITH_WEEKLY : SYNC_OFF_BODY_DEFAULT;
       syncOffConfirmOverlay.classList.add('show');
     });
     document.getElementById('syncOffConfirmClose').addEventListener('click', closeSyncOffConfirm);
     document.getElementById('syncOffConfirmCancel').addEventListener('click', closeSyncOffConfirm);
     syncOffConfirmOverlay.addEventListener('click', e => { if (e.target === syncOffConfirmOverlay) closeSyncOffConfirm(); });
     document.getElementById('syncOffConfirmTurnOff').addEventListener('click', () => {
+      // Cancel any debounced push still pending from an edit made just
+      // before turning this off — otherwise it could fire up to 800ms from
+      // now and silently recreate the record right after we delete it.
+      clearTimeout(syncPushTimer);
+      deleteSyncSettingsNow(); // best-effort; see its own comment above
       syncAcrossDevicesToggle.checked = false;
       saveSettingsOption('syncAcrossDevices', false);
+      // The rule: no sync, no weekly emails. Cascade the turn-off rather
+      // than leaving a Weekly Grade Summary that's now enforcing a
+      // condition it no longer meets.
+      if (weeklyGradeSummaryToggle.checked) {
+        weeklyGradeSummaryToggle.checked = false;
+        saveSettingsOption('weeklyGradeSummary', false);
+      }
       closeSyncOffConfirm();
+    });
+
+    // "Turn on sync first" nudge — see the weeklyGradeSummaryToggle change
+    // handler above, and the syncRequiredOverlay markup's own comment.
+    const syncRequiredOverlay = document.getElementById('syncRequiredOverlay');
+    function openSyncRequiredNudge() {
+      pendingWeeklySummaryEnable = true; // same "resume once unblocked" flag the email nudge uses
+      syncRequiredOverlay.classList.add('show');
+    }
+    function closeSyncRequiredNudge() { syncRequiredOverlay.classList.remove('show'); }
+    document.getElementById('syncRequiredClose').addEventListener('click', closeSyncRequiredNudge);
+    document.getElementById('syncRequiredCancel').addEventListener('click', () => {
+      pendingWeeklySummaryEnable = false;
+      closeSyncRequiredNudge();
+    });
+    syncRequiredOverlay.addEventListener('click', e => { if (e.target === syncRequiredOverlay) closeSyncRequiredNudge(); });
+    document.getElementById('syncRequiredEnable').addEventListener('click', () => {
+      syncAcrossDevicesToggle.checked = true;
+      saveSettingsOption('syncAcrossDevices', true);
+      closeSyncRequiredNudge();
+      // "Good to go" — same pattern as finishEmailVerify(): once the thing
+      // that was blocking Weekly Grade Summary clears, flip it on right
+      // away rather than making the user go turn it on a second time. Email
+      // still has to already be verified for this to actually take —
+      // saveSettingsOption alone doesn't re-check that, so re-run the real
+      // gate by simulating the toggle click instead of calling
+      // saveSettingsOption directly.
+      if (pendingWeeklySummaryEnable) {
+        pendingWeeklySummaryEnable = false;
+        if (profileState.email && profileState.emailVerified) {
+          weeklyGradeSummaryToggle.checked = true;
+          saveSettingsOption('weeklyGradeSummary', true);
+        }
+      }
     });
 
     // ------------------------------------------------------------------
@@ -2405,6 +2697,7 @@
     renderProfileCard();
     syncResponsiveView();
     showSection('general', { showDetail: false });
+    pullSyncSettingsNow();
   </script>
 </body>
 </html>

@@ -993,7 +993,7 @@
   <div class="page">
     <div class="topbar">
       <div>
-        <h1 class="title">Hey, Martin</h1>
+        <h1 class="title" id="greetingTitle">Hey, Martin</h1>
         <p class="subtitle">Monday, August 24</p>
       </div>
       <div class="profile-menu-wrap">
@@ -2356,6 +2356,13 @@
     // so a photo you set in Settings was invisible the moment you left
     // it. schoolagy_profile is the same localStorage record
     // settings.html writes on every save; this is read-only here.
+    //
+    // Fixed 2026-09-09 (per Martin: "it still says Hey, Martin ... not
+    // the name i entered"): the greeting itself had the exact same gap
+    // the profile button already had fixed for it — "Hey, Martin" was
+    // just the page's own hardcoded sample text, never touched by
+    // whatever name onboarding/Settings actually saved. Same read here
+    // covers both now instead of just the avatar initial.
     (function () {
       var profile = null;
       try {
@@ -2370,6 +2377,11 @@
         profileBtn.textContent = '';
       } else if (profile.name) {
         profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+      if (profile.name && profile.name.trim()) {
+        var firstName = profile.name.trim().split(/\s+/)[0];
+        var greetingTitle = document.getElementById('greetingTitle');
+        if (greetingTitle) greetingTitle.textContent = 'Hey, ' + firstName;
       }
     })();
     const profileMenu = document.getElementById('profileMenu');

@@ -1,9 +1,110 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
 import PageSkeleton from "./PageSkeleton";
+
+/**
+ * Dark mode + accent/background "theme" tokens, shared by every real app
+ * page via the same localStorage records Settings/onboarding already write
+ * (`schoolagy_dark_mode`, `schoolagy_appearance`).
+ *
+ * Added 2026-09-09, fixing two things Martin hit for real:
+ *
+ *   1. Dark mode was only ever wired up inside settings.html, calendar.html
+ *      and onboarding.html — each duplicating its own read+apply logic. The
+ *      other 9 real pages (Home, Courses, Course Home, Course Materials,
+ *      Gradebook, Grades, Assignments, an assignment's own page, Messages,
+ *      Contacts) never read `schoolagy_dark_mode` at all, despite already
+ *      defining the exact same --panel-bg/--text-dark/etc. tokens at :root
+ *      with the exact same light-mode values — the CSS was ready, nothing
+ *      ever applied the dark ones. That's why toggling Dark Mode in
+ *      Settings visibly "doesn't do anything but change only the settings
+ *      color": Settings (and Calendar) were the only pages listening.
+ *   2. Accent/background WERE already applied on every page, but only from
+ *      each page's own inline <script> — which LegacyPage only mounts once
+ *      the "checking" phase resolves (see the effect below), one paint
+ *      after the skeleton/page first appears with its hardcoded default
+ *      (`--accent: #d94a2b`, a red-orange). That one-paint gap is what
+ *      read as "the red background flashes all the time during page to
+ *      page loading."
+ *
+ * Doing both here instead, once, in a layout effect — which React runs
+ * synchronously after the DOM is updated but BEFORE the browser paints,
+ * unlike a normal effect — means the very first frame of every route
+ * (including the "checking" skeleton) already carries the user's real
+ * dark-mode/accent/background choice, and it now covers all 15 routes
+ * instead of 3. Each page's own duplicated read-only accent/background IIFE
+ * (and settings.html/calendar.html/onboarding.html's own dark-mode logic,
+ * which also still WRITES the preference) still runs too, once that page's
+ * script mounts — harmless, since it's applying the same values a second
+ * time, not worth ripping out of a dozen already-large source pages for a
+ * no-op.
+ */
+function darkenHex(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+  const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+  const b = Math.max(0, (n & 255) * (1 - amount));
+  return "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+}
+
+function applyStoredTheme(): void {
+  const root = document.documentElement.style;
+
+  let isDark = false;
+  try {
+    const v = window.localStorage.getItem("schoolagy_dark_mode");
+    if (v === "dark") isDark = true;
+    else if (v === "light") isDark = false;
+    else isDark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  } catch {
+    isDark = false;
+  }
+  if (isDark) {
+    root.setProperty("--panel-bg", "#1c1d26");
+    root.setProperty("--panel-inner", "#15161e");
+    root.setProperty("--text-dark", "#f0f0f5");
+    root.setProperty("--text-muted", "#a3a5bd");
+    root.setProperty("--text-faint", "#6f7086");
+    root.setProperty("--border", "#33344a");
+    root.setProperty("--toggle-track-bg", "#3a3c4d");
+  } else {
+    root.setProperty("--panel-bg", "#eaeaec");
+    root.setProperty("--panel-inner", "#dcdce0");
+    root.setProperty("--text-dark", "#14151f");
+    root.setProperty("--text-muted", "#4b4d63");
+    root.setProperty("--text-faint", "#83849a");
+    root.setProperty("--border", "#cfcfd6");
+    root.setProperty("--toggle-track-bg", "#c7c7cd");
+  }
+  document.body.classList.toggle("dark-mode", isDark);
+
+  try {
+    const raw = window.localStorage.getItem("schoolagy_appearance");
+    const saved = raw ? JSON.parse(raw) : null;
+    if (saved && saved.accent) {
+      root.setProperty("--accent", saved.accent);
+      root.setProperty("--accent-dark", saved.accentDark || darkenHex(saved.accent, 0.22));
+    }
+    if (saved && saved.background) {
+      if (saved.background === "white") {
+        document.body.style.backgroundImage = "none";
+        document.body.style.backgroundColor = "#f4f4f6";
+      } else if (saved.background === "black") {
+        document.body.style.backgroundImage = "none";
+        document.body.style.backgroundColor = "#0c0c0e";
+      } else {
+        document.body.style.backgroundImage = `url("${saved.background}")`;
+        document.body.style.backgroundColor = "";
+      }
+    }
+  } catch {
+    // Malformed JSON or private browsing — the page's own default look
+    // stands, same as every per-page copy of this same read already does.
+  }
+}
 
 /**
  * Renders one of Schoolagy's self-contained HTML/CSS/JS pages inside a real
@@ -75,6 +176,20 @@ export default function LegacyPage({
   const [mode, setMode] = useState<Mode>("out");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // Applies the user's saved dark-mode/accent/background before the browser
+  // paints (see applyStoredTheme's own comment above) — every route that
+  // requires auth, not just the 3 pages that used to duplicate this
+  // themselves. Login manages its own fixed look and isn't included.
+  useLayoutEffect(() => {
+    if (!requiresAuth) return;
+    applyStoredTheme();
+    function onStorage(e: StorageEvent) {
+      if (e.key === "schoolagy_dark_mode" || e.key === "schoolagy_appearance") applyStoredTheme();
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [requiresAuth]);
+
   useEffect(() => {
     document.title = title;
   }, [title]);
@@ -119,6 +234,14 @@ export default function LegacyPage({
         mode: session.mode,
         data: bundle ?? {},
       };
+      // Separate from __SCHOOLAGY__ above on purpose: settings.html only
+      // needs to know demo-vs-live to gate the sync toggles, not consume real
+      // student data, and scripts/verify-pages.mjs's "Live-data hooks" check
+      // treats any embedded page script that references the combined global
+      // as a page that renders live data — settings and onboarding aren't
+      // supposed to be on that list. Set for every page (not just
+      // requiresAuth ones) so a page can check it without special-casing.
+      (window as any).__SCHOOLAGY_MODE__ = session.mode;
 
       setMode(session.mode);
       setPhase("ready");
