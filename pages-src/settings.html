@@ -1487,18 +1487,48 @@
     });
 
     // ------------------------------------------------------------------
-    // Cache — no real cache to measure in a static mockup, so the size
-    // shown is a placeholder; clearing it just resets that number with
-    // the same "brief confirmation, then revert the label" feedback
-    // pattern used elsewhere (e.g. "Resend link" → "Link sent!").
+    // Cache — 2026-09-08, per Martin: "why is the cache not accurate,
+    // it's always the same number." Because it was: "128 MB" was a
+    // hardcoded placeholder string that never reflected anything real.
+    // The one thing this app actually caches on-device "for faster
+    // loading" is the API response cache in schoolagy.ts (schoolagy_
+    // bundle_cache — your grades/courses/assignments bundle — and the
+    // small schoolagy_session_state alongside it), both sessionStorage.
+    // Deliberately NOT included: the schoolagy_* localStorage keys
+    // (course customizations, dark mode, profile, appearance, settings
+    // options) — those are saved preferences, not re-fetchable cache,
+    // and per the 2026-09-08 fix that made them survive sign-out, they
+    // should just as much survive a "Clear Cache" tap. .length is UTF-16
+    // code units rather than exact bytes, close enough for a rough
+    // on-device size indicator like this.
     // ------------------------------------------------------------------
+    const CACHE_STORAGE_KEYS = ['schoolagy_bundle_cache', 'schoolagy_session_state'];
+    function computeCacheBytes() {
+      let total = 0;
+      try {
+        CACHE_STORAGE_KEYS.forEach(key => {
+          const v = sessionStorage.getItem(key);
+          if (v) total += v.length;
+        });
+      } catch {}
+      return total;
+    }
+    function formatCacheSize(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+    }
     const clearCacheBtn = document.getElementById('clearCacheBtn');
     const cacheSizeValue = document.getElementById('cacheSizeValue');
+    cacheSizeValue.textContent = formatCacheSize(computeCacheBytes());
     clearCacheBtn.addEventListener('click', () => {
       clearCacheBtn.disabled = true;
       clearCacheBtn.textContent = 'Clearing…';
       setTimeout(() => {
-        cacheSizeValue.textContent = '0 MB';
+        try {
+          CACHE_STORAGE_KEYS.forEach(key => sessionStorage.removeItem(key));
+        } catch {}
+        cacheSizeValue.textContent = formatCacheSize(computeCacheBytes());
         clearCacheBtn.textContent = 'Cleared!';
         setTimeout(() => {
           clearCacheBtn.textContent = 'Clear Cache';
@@ -1528,6 +1558,65 @@
       const b = Math.max(0, (n & 255) * (1 - amount));
       return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
     }
+
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Before this,
+    // picking a background or accent color here only ever restyled THIS
+    // page, in memory — document.documentElement.style.setProperty and
+    // document.body.style.backgroundImage are both purely live DOM
+    // state, never written anywhere, so navigating to any other page
+    // (or just reloading this one) silently reverted to the hardcoded
+    // default look. schoolagy_appearance is the same shared-localStorage
+    // -record pattern as schoolagy_dark_mode/schoolagy_profile: this
+    // page (plus onboarding's own Theme step, see onboarding.html) is
+    // the only writer — persistAppearance() below, called from every
+    // accent/background control's own handler — and every other real
+    // app page applies whatever's saved here, read-only, on its own
+    // load.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_APPEARANCE_KEY = 'schoolagy_appearance';
+    function loadAppearance() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_APPEARANCE_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    // null = "this page's own default wallpaper" (nothing chosen/saved
+    // yet); otherwise 'white', 'black', or an image/data URL.
+    let currentBackgroundValue = null;
+    function persistAppearance() {
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d94a2b';
+      try {
+        localStorage.setItem(SCHOOLAGY_APPEARANCE_KEY, JSON.stringify({
+          accent,
+          accentDark: darken(accent, 0.22),
+          background: currentBackgroundValue,
+        }));
+      } catch {}
+    }
+    const savedAppearance = loadAppearance();
+    if (savedAppearance) {
+      if (savedAppearance.accent) {
+        document.documentElement.style.setProperty('--accent', savedAppearance.accent);
+        document.documentElement.style.setProperty('--accent-dark', savedAppearance.accentDark || darken(savedAppearance.accent, 0.22));
+      }
+      if (savedAppearance.background) {
+        currentBackgroundValue = savedAppearance.background;
+        if (savedAppearance.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (savedAppearance.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else {
+          document.body.style.backgroundImage = `url("${savedAppearance.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+    }
+
     function initSharedColorSwatchPopup(popup) {
       let currentBtn = null, currentOnPick = null;
       SWATCH_PALETTE.flat().forEach(hex => {
@@ -1583,6 +1672,7 @@
         document.documentElement.style.setProperty('--accent', hex);
         document.documentElement.style.setProperty('--accent-dark', darken(hex, 0.22));
         accentBtn.style.background = hex;
+        persistAppearance();
       });
     });
 
@@ -1759,11 +1849,14 @@
       el.className = 'swatch';
       el.style.backgroundImage = `url("${s.img}")`;
       el.dataset.accent = s.accent;
+      el.dataset.swatchId = s.id;
       makeSwatchActivatable(el, `Background & color option ${i + 1}`);
       el.addEventListener('click', () => {
         selectSwatch(el);
         applyBgAccent(s.accent);
         applyBackground(s.img);
+        currentBackgroundValue = s.img;
+        persistAppearance();
       });
       swatchGrid.appendChild(el);
     });
@@ -1844,6 +1937,8 @@
           selectSwatch(uploadSwatch);
           applyBgAccent(hex);
           applyBackground(dataUrl);
+          currentBackgroundValue = dataUrl;
+          persistAppearance();
         };
         img.onerror = () => alert("Couldn't read that image — try a different file.");
         img.src = dataUrl;
@@ -1860,6 +1955,8 @@
       applyBgAccent('#d94a2b');
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#f4f4f6';
+      currentBackgroundValue = 'white';
+      persistAppearance();
     });
     swatchGrid.appendChild(whiteSwatch);
 
@@ -1872,8 +1969,39 @@
       applyBgAccent('#111114');
       document.body.style.backgroundImage = 'none';
       document.body.style.backgroundColor = '#0c0c0e';
+      currentBackgroundValue = 'black';
+      persistAppearance();
     });
     swatchGrid.appendChild(blackSwatch);
+
+    // Reflect whatever background was restored from localStorage above
+    // (if any) as the selected tile in this grid, so the picker agrees
+    // with what's actually showing on the page — otherwise nothing here
+    // would look "chosen" even though a saved background is clearly
+    // applied.
+    if (savedAppearance && savedAppearance.background) {
+      if (savedAppearance.background === 'white') {
+        selectSwatch(whiteSwatch);
+      } else if (savedAppearance.background === 'black') {
+        selectSwatch(blackSwatch);
+      } else {
+        const matchingPreset = SWATCHES.find(s => s.img === savedAppearance.background);
+        const presetEl = matchingPreset
+          ? swatchGrid.querySelector(`.swatch[data-swatch-id="${matchingPreset.id}"]`)
+          : null;
+        if (presetEl) {
+          selectSwatch(presetEl);
+        } else {
+          // A custom uploaded image from a previous visit — same
+          // "selected, no thumbnail preview" treatment the upload flow
+          // itself already uses right after a fresh upload.
+          uploadSwatch.dataset.accent = savedAppearance.accent || uploadSwatch.dataset.accent;
+          uploadSwatch.title = 'Custom background (uploaded)';
+          uploadSwatch.setAttribute('aria-label', 'Custom uploaded background, accent color picked automatically from the image');
+          selectSwatch(uploadSwatch);
+        }
+      }
+    }
 
     // ------------------------------------------------------------------
     // Account: profile state, Edit Profile modal, email validation +

@@ -133,24 +133,34 @@ export async function signIn(key: string, secret: string): Promise<SignInResult>
 export async function signOut(): Promise<void> {
   cacheClear(SESSION_CACHE);
   cacheClear(BUNDLE_CACHE);
-  try {
-    const controller = new AbortController();
-    // The button must never feel stuck: if the API doesn't answer quickly,
-    // give up on the network call and move on — the caches above are already
-    // cleared and the cookie will expire on its own either way.
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    try {
-      await fetch(`${API_BASE}/auth/session`, {
-        method: "DELETE",
-        credentials: "include",
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch {
-    /* the cookie expires on its own; local caches are already cleared */
-  }
+  // The DELETE below is what actually clears the httpOnly session cookie —
+  // the API responds with a Set-Cookie that expires it; nothing on this side
+  // can touch that cookie directly (that's the point of httpOnly). It has to
+  // be allowed to finish on its own terms.
+  //
+  // Fixed 2026-09-08 (per Martin: "signing out should clear all your
+  // cookies" — it wasn't reliably doing that). The previous version wrapped
+  // this fetch in an AbortController that hard-cancelled it after 3 seconds
+  // "so the button never feels stuck." That's a real UX goal, but
+  // `controller.abort()` doesn't just stop waiting — it tears down the
+  // in-flight connection, so whenever the request hadn't finished by the 3s
+  // mark (a Workers cold start alone can eat a meaningful chunk of that),
+  // the server's clearing Set-Cookie was never received or processed, and
+  // the session cookie was silently left behind even though the app itself
+  // had already moved on as if signed out. The fix: race a timeout against
+  // how long THIS FUNCTION waits, not against the request itself — the
+  // fetch keeps running in the background and still gets to clear the
+  // cookie whenever its response actually lands, however long that takes.
+  const deleteRequest = fetch(`${API_BASE}/auth/session`, {
+    method: "DELETE",
+    credentials: "include",
+  }).catch(() => {
+    /* the cookie expires on its own in 30 days either way */
+  });
+  await Promise.race([
+    deleteRequest,
+    new Promise((resolve) => setTimeout(resolve, 3000)),
+  ]);
 }
 
 export interface Bundle {

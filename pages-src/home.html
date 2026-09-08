@@ -1154,6 +1154,52 @@
 
   <script>
     // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
     // Sample data only — this page has no backend yet. Structured the way
     // real Schoology API data will actually look (course name + hex color
     // the student picked on that course's overview page, grade/predicted

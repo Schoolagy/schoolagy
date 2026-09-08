@@ -1577,6 +1577,12 @@
     // darkened slightly so it still reads well as a UI accent.
     let defaultSwatchEl = null;
     const DEFAULT_SWATCH_ID = 's_r2c8'; // matches the deep blue used as the page background in the original PDF mockup
+    // Tracks whatever background this Theme step currently has applied
+    // (preset image URL, an uploaded data URL, or 'white'/'black') so the
+    // Profile step's submit handler can save it into schoolagy_appearance
+    // alongside the accent — see the 2026-09-08 note further down, near
+    // submitBtn's click handler, for why this exists at all.
+    let selectedBackgroundValue = null;
     SWATCHES.forEach((s, i) => {
       const el = document.createElement('div');
       el.className = 'swatch';
@@ -1589,6 +1595,7 @@
         applyBackground(s.img);
         applyHeaderTextMode('dark');
         hideAccentPicker(); // presets bundle one fixed accent — no manual override for these
+        selectedBackgroundValue = s.img;
       });
       if (s.id === DEFAULT_SWATCH_ID) defaultSwatchEl = el;
       swatchGrid.appendChild(el);
@@ -1797,6 +1804,7 @@
           applyBackground(dataUrl);
           applyHeaderTextMode(headerMode);
           showAccentPicker(hex);
+          selectedBackgroundValue = dataUrl;
         };
         img.onerror = () => {
           alert("Couldn't read that image — try a different file.");
@@ -1827,6 +1835,7 @@
       document.body.style.backgroundColor = '#f4f4f6';
       applyHeaderTextMode('light');
       showAccentPicker('#3d3f9e');
+      selectedBackgroundValue = 'white';
     });
     addBlankSlot(); // row 3, col 5 in the original grid
     swatchGrid.appendChild(whiteSwatch);
@@ -1842,6 +1851,7 @@
       document.body.style.backgroundColor = '#0c0c0e';
       applyHeaderTextMode('dark');
       showAccentPicker('#111114');
+      selectedBackgroundValue = 'black';
     });
     swatchGrid.appendChild(blackSwatch);
     addBlankSlot(); // row 3, col 8 in the original grid
@@ -2019,11 +2029,42 @@
       emailError.classList.remove('show');
 
       // Front-end only — real submit will create the Schoolagy Profile
-      // server-side (tied to the Schoology user ID) and persist the
-      // Theme + Features choices made in the previous two steps. A real
-      // request has network latency, so a brief loading state here
-      // (instead of an instant jump to "You're all set!") sets the
-      // right expectation rather than feeling like nothing happened.
+      // server-side (tied to the Schoology user ID). A real request has
+      // network latency, so a brief loading state here (instead of an
+      // instant jump to "You're all set!") sets the right expectation
+      // rather than feeling like nothing happened.
+      //
+      // The name/email + Theme step's accent/background DO get saved for
+      // real, though (2026-09-08, per Martin: the demo always showed
+      // "Martin"/"M" no matter what name you actually entered here, and
+      // separately, "wallpapers + accent colors don't save across
+      // pages"). Both bugs had the same root cause on this page: this
+      // whole form used to be genuinely front-end only, discarding every
+      // choice the moment "You're all set!" showed — there was no write
+      // to localStorage anywhere in this file. schoolagy_profile and
+      // schoolagy_appearance are the exact same shared-localStorage
+      // records settings.html's Account/Appearance sections already
+      // read and write (every other page's profile button + accent/
+      // background already apply them read-only), so saving here just
+      // makes this page's choices join the ones the rest of the app
+      // already respects, instead of vanishing the instant onboarding
+      // ends.
+      try {
+        localStorage.setItem('schoolagy_profile', JSON.stringify({
+          name: nameInput.value.trim(),
+          email: emailVal,
+          emailVerified: false,
+          photo: null,
+        }));
+        const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+        if (accent) {
+          localStorage.setItem('schoolagy_appearance', JSON.stringify({
+            accent,
+            background: selectedBackgroundValue,
+          }));
+        }
+      } catch {}
+
       submitBtn.disabled = true;
       submitBtn.classList.add('loading');
       submitBtn.textContent = 'Creating your profile…';
