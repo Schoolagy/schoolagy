@@ -2556,6 +2556,42 @@
       } catch {}
     }
 
+    // ------------------------------------------------------------------
+    // Sync conflict resolution — added 2026-09-09, per Martin: "the
+    // background is always turning red between pages." Root cause: pulling
+    // never checked WHEN the server's copy was last written, only whether
+    // its content differed from this device's own — so ANY older record
+    // already sitting in KV (from an earlier test session, or a version of
+    // this device that set something up before ever pushing) would get
+    // pulled down and silently overwrite this device's own current,
+    // legitimately newer choices the very next time Settings loaded.
+    //
+    // `schoolagy_sync_meta` remembers the `settingsUpdatedAt` timestamp
+    // this device last actually agreed with the server on. Pulling only
+    // adopts the server's copy when its timestamp has moved past that —
+    // meaning something genuinely changed elsewhere since this device
+    // last synced, not merely "differs from local right now." A server
+    // record with no timestamp of its own (any record written before this
+    // fix shipped) is never trusted over local at all — this device's
+    // current state gets pushed up to replace it instead of pulled down.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_SYNC_META_KEY = 'schoolagy_sync_meta';
+    function loadSyncMeta() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_SYNC_META_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function saveSyncMeta(settingsUpdatedAt) {
+      try {
+        localStorage.setItem(SCHOOLAGY_SYNC_META_KEY, JSON.stringify({ settingsUpdatedAt }));
+      } catch {}
+    }
+    function clearSyncMeta() {
+      try { localStorage.removeItem(SCHOOLAGY_SYNC_META_KEY); } catch {}
+    }
+
     // Debounced so a burst of writes (dragging the accent-color picker,
     // say) becomes one PUT instead of one per pixel.
     let syncPushTimer = null;
@@ -2567,12 +2603,19 @@
     async function pushSyncSettingsNow() {
       if (!isSyncOn()) return;
       try {
-        await fetch(schoolagyApiBase() + '/sync/settings', {
+        const res = await fetch(schoolagyApiBase() + '/sync/settings', {
           method: 'PUT',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ settings: collectSyncedSettings() }),
         });
+        if (res.ok) {
+          const record = await res.json();
+          // Remember the timestamp the server just stamped this push with,
+          // so the next pull can tell "server unchanged since I pushed"
+          // apart from "someone else changed it after me."
+          if (record && typeof record.settingsUpdatedAt === 'string') saveSyncMeta(record.settingsUpdatedAt);
+        }
       } catch {
         // Offline or the API's unreachable — this device's own localStorage
         // is still correct for THIS device; the next successful save (or
@@ -2618,10 +2661,37 @@
           pushSyncSettingsNow();
           return;
         }
+        const remoteStamp = typeof record.settingsUpdatedAt === 'string' ? record.settingsUpdatedAt : '';
+        if (!remoteStamp) {
+          // An untimestamped record — written before this fix shipped, or
+          // otherwise missing its own settingsUpdatedAt. Never trusted
+          // over whatever's already showing on this device: push instead
+          // of pulling, which also gives the record a real timestamp for
+          // every pull after this one.
+          pushSyncSettingsNow();
+          return;
+        }
+        const meta = loadSyncMeta();
+        if (meta && meta.settingsUpdatedAt === remoteStamp) {
+          // The server hasn't moved since this device last agreed with it.
+          // Any difference between remote and local right now is this
+          // device's own not-yet-pushed edit, not something to overwrite —
+          // schedulePushSyncSettings already covers pushing it (every
+          // local-writing helper calls it), so there's nothing to do here.
+          return;
+        }
+        // Either this device has never synced before (meta === null — a
+        // fresh device catching up to the account's existing state) or the
+        // server's timestamp has moved past what this device last saw
+        // (someone else changed it since). Both are real reasons to adopt.
         const remote = JSON.stringify(record.settings);
         const local = JSON.stringify(collectSyncedSettings());
-        if (remote === local) return;
+        if (remote === local) {
+          saveSyncMeta(remoteStamp);
+          return;
+        }
         applySyncedSettings(record.settings);
+        saveSyncMeta(remoteStamp);
         window.location.reload();
       } catch {
         // No network / API down — render from whatever's already local.
@@ -2644,6 +2714,7 @@
       // now and silently recreate the record right after we delete it.
       clearTimeout(syncPushTimer);
       deleteSyncSettingsNow(); // best-effort; see its own comment above
+      clearSyncMeta(); // the server record is gone; a stale timestamp here would be meaningless if sync comes back on later
       syncAcrossDevicesToggle.checked = false;
       saveSettingsOption('syncAcrossDevices', false);
       // The rule: no sync, no weekly emails. Cascade the turn-off rather
