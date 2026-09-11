@@ -541,6 +541,40 @@
   .upload-gate-scanning p { margin-top: 12px; text-align: center; }
   @keyframes upload-gate-spin { to { transform: rotate(360deg); } }
 
+  /* ---------- Background pan & zoom crop — 2026-09-11, per Martin.
+     Reuses the .upload-gate-box shell (same show/hide, same buttons) but
+     wider, since it needs room for the crop stage. No fixed frame — the
+     background fills the page behind everything via body's own
+     background-size: cover; background-position: center (unchanged by
+     this), so the stage previews roughly what cover+center will actually
+     show, at THIS window's aspect ratio, and the user just drags/zooms
+     until it looks right. Same engine as settings.html's own bg crop,
+     duplicated rather than shared per this app's no-shared-file
+     convention. ---------- */
+  .bg-crop-box { max-width: 480px; }
+  .bg-crop-stage {
+    position: relative;
+    width: 100%;
+    aspect-ratio: var(--bg-crop-aspect, 1.6);
+    border-radius: var(--window-radius);
+    overflow: hidden;
+    background: var(--control-bg);
+    cursor: grab;
+    touch-action: none;
+    margin-top: 14px;
+  }
+  .bg-crop-stage.dragging { cursor: grabbing; }
+  .bg-crop-img {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: none;
+    transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .bg-crop-zoom { width: 100%; display: block; margin-top: 12px; }
+
   .swatch.white { background: #ffffff; border-color: #cfcfd3; }
   .swatch.black { background: #111114; }
 
@@ -1180,6 +1214,28 @@
     </div>
   </div>
 
+  <!-- ---------- Background pan & zoom — 2026-09-11, per Martin: uploaded
+       backgrounds should be croppable here too, same as Settings. Runs
+       right after the upload gate's scan clears. Styled off this page's
+       own .upload-gate-* shell (opacity/visibility show, not the
+       .editor-overlay one settings.html uses — that class doesn't exist
+       here) rather than sharing markup, per this app's own
+       no-shared-file convention. ---------- -->
+  <div class="upload-gate-overlay bg-crop-overlay" id="bgCropOverlay">
+    <div class="upload-gate-box bg-crop-box" id="bgCropBox" role="dialog" aria-modal="true" aria-labelledby="bgCropTitle">
+      <h2 id="bgCropTitle">Position Background</h2>
+      <p>Drag to reposition, and use the slider to zoom — this previews roughly how it'll look behind the app.</p>
+      <div class="bg-crop-stage" id="bgCropStage">
+        <img class="bg-crop-img" id="bgCropImg" alt="" draggable="false">
+      </div>
+      <input type="range" class="bg-crop-zoom" id="bgCropZoom" min="100" max="300" value="100" aria-label="Zoom">
+      <div class="upload-gate-actions">
+        <button class="upload-gate-goback" type="button" id="bgCropCancelBtn">Cancel</button>
+        <button class="upload-gate-continue" type="button" id="bgCropConfirmBtn">Use Background</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ------------------------------------------------------------------
     // Reusable color-swatch popup (replaces native <input type="color">,
@@ -1684,6 +1740,139 @@
       closeUploadGate();
     });
 
+    // ------------------------------------------------------------------
+    // Background pan & zoom — 2026-09-11, per Martin, same request and
+    // same engine as settings.html's own bg crop (duplicated rather than
+    // shared, per this app's no-shared-file convention — see the HTML
+    // comment above #bgCropOverlay). Runs right after the upload gate's
+    // scan clears, before extractDominantColor/applyBackground ever see
+    // the image, so the accent color and the saved background both come
+    // from what the user actually framed, not the raw upload.
+    // ------------------------------------------------------------------
+    const bgCropOverlay = document.getElementById('bgCropOverlay');
+    const bgCropStage = document.getElementById('bgCropStage');
+    const bgCropImg = document.getElementById('bgCropImg');
+    const bgCropZoom = document.getElementById('bgCropZoom');
+    let bgCropState = null; // { naturalW, naturalH, scale, minScale, offsetX, offsetY, onConfirm }
+
+    function pageAspectRatio() {
+      const ratio = (window.innerWidth || 1600) / (window.innerHeight || 1000);
+      return Math.min(2.4, Math.max(1.2, ratio || 1.6));
+    }
+    function openBgCrop(dataUrl, onConfirm) {
+      const img = new Image();
+      img.onload = () => {
+        bgCropStage.style.setProperty('--bg-crop-aspect', pageAspectRatio());
+        bgCropOverlay.classList.add('show');
+        // aspect-ratio needs the stage actually laid out before its
+        // clientWidth/clientHeight mean anything — measuring
+        // synchronously here, before the browser has painted the now-
+        // visible overlay, would see a collapsed 0x0 box.
+        requestAnimationFrame(() => {
+          const stageW = bgCropStage.clientWidth || 480;
+          const stageH = bgCropStage.clientHeight || 300;
+          const minScale = Math.max(stageW / img.naturalWidth, stageH / img.naturalHeight);
+          bgCropState = {
+            naturalW: img.naturalWidth,
+            naturalH: img.naturalHeight,
+            scale: minScale,
+            minScale,
+            offsetX: 0,
+            offsetY: 0,
+            onConfirm,
+          };
+          bgCropImg.src = dataUrl;
+          bgCropZoom.value = 100;
+          renderBgCropTransform();
+        });
+      };
+      img.onerror = () => alert("Couldn't read that image — try a different file.");
+      img.src = dataUrl;
+    }
+    function renderBgCropTransform() {
+      if (!bgCropState) return;
+      bgCropImg.style.width = (bgCropState.naturalW * bgCropState.scale) + 'px';
+      bgCropImg.style.height = (bgCropState.naturalH * bgCropState.scale) + 'px';
+      bgCropImg.style.transform = `translate(calc(-50% + ${bgCropState.offsetX}px), calc(-50% + ${bgCropState.offsetY}px))`;
+    }
+    function clampBgCropOffsets() {
+      if (!bgCropState) return;
+      const stageW = bgCropStage.clientWidth || 480;
+      const stageH = bgCropStage.clientHeight || 300;
+      const halfW = (bgCropState.naturalW * bgCropState.scale) / 2;
+      const halfH = (bgCropState.naturalH * bgCropState.scale) / 2;
+      const maxX = Math.max(0, halfW - stageW / 2);
+      const maxY = Math.max(0, halfH - stageH / 2);
+      bgCropState.offsetX = Math.min(maxX, Math.max(-maxX, bgCropState.offsetX));
+      bgCropState.offsetY = Math.min(maxY, Math.max(-maxY, bgCropState.offsetY));
+    }
+    let bgCropDrag = null;
+    bgCropStage.addEventListener('pointerdown', e => {
+      if (!bgCropState) return;
+      bgCropDrag = { startX: e.clientX, startY: e.clientY, origX: bgCropState.offsetX, origY: bgCropState.offsetY };
+      bgCropStage.classList.add('dragging');
+      bgCropStage.setPointerCapture(e.pointerId);
+    });
+    bgCropStage.addEventListener('pointermove', e => {
+      if (!bgCropDrag || !bgCropState) return;
+      bgCropState.offsetX = bgCropDrag.origX + (e.clientX - bgCropDrag.startX);
+      bgCropState.offsetY = bgCropDrag.origY + (e.clientY - bgCropDrag.startY);
+      clampBgCropOffsets();
+      renderBgCropTransform();
+    });
+    function endBgCropDrag() { bgCropDrag = null; bgCropStage.classList.remove('dragging'); }
+    bgCropStage.addEventListener('pointerup', endBgCropDrag);
+    bgCropStage.addEventListener('pointerleave', endBgCropDrag);
+    bgCropZoom.addEventListener('input', () => {
+      if (!bgCropState) return;
+      const pct = Number(bgCropZoom.value) / 100;
+      bgCropState.scale = bgCropState.minScale * pct;
+      clampBgCropOffsets();
+      renderBgCropTransform();
+    });
+    function closeBgCrop() {
+      bgCropOverlay.classList.remove('show');
+      bgCropState = null;
+      bgCropImg.src = '';
+    }
+    document.getElementById('bgCropCancelBtn').addEventListener('click', closeBgCrop);
+    bgCropOverlay.addEventListener('click', e => { if (e.target === bgCropOverlay) closeBgCrop(); });
+    document.getElementById('bgCropConfirmBtn').addEventListener('click', () => {
+      if (!bgCropState) return;
+      const stageW = bgCropStage.clientWidth || 480;
+      const stageH = bgCropStage.clientHeight || 300;
+      const OUTPUT_W = 1600;
+      const OUTPUT_H = Math.round(OUTPUT_W * (stageH / stageW));
+      const canvas = document.createElement('canvas');
+      canvas.width = OUTPUT_W;
+      canvas.height = OUTPUT_H;
+      const ctx = canvas.getContext('2d');
+      const outputScale = OUTPUT_W / stageW;
+      const drawScale = bgCropState.scale * outputScale;
+      const cx = OUTPUT_W / 2 + bgCropState.offsetX * outputScale;
+      const cy = OUTPUT_H / 2 + bgCropState.offsetY * outputScale;
+      ctx.drawImage(
+        bgCropImg,
+        cx - (bgCropState.naturalW * drawScale) / 2,
+        cy - (bgCropState.naturalH * drawScale) / 2,
+        bgCropState.naturalW * drawScale,
+        bgCropState.naturalH * drawScale
+      );
+      // JPEG, not PNG: this is a full-viewport photo, not a small icon —
+      // keeping it PNG would bloat schoolagy_appearance (and everything
+      // that syncs it) for no visible benefit on a photographic image.
+      const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const onConfirm = bgCropState.onConfirm;
+      closeBgCrop();
+      onConfirm(croppedDataUrl);
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (!bgCropOverlay.classList.contains('show')) return;
+      e.stopImmediatePropagation();
+      closeBgCrop();
+    });
+
     const uploadIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M12 16V4M12 4l-4 4M12 4l4 4" stroke-linecap="round" stroke-linejoin="round"/>
       <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1787,29 +1976,34 @@
     function handleBackgroundUpload(file) {
       const reader = new FileReader();
       reader.onload = () => {
-        const dataUrl = reader.result;
-        const img = new Image();
-        img.onload = () => {
-          const { hex, headerMode } = extractDominantColor(img);
-          // Keep the upload swatch showing the cloud icon rather than a
-          // tiny stretched/cropped thumbnail of the actual photo — at
-          // ~60px that preview reads as visual noise, not a useful
-          // preview. Selection is communicated the same way as every
-          // other swatch: the checkmark badge from .swatch.selected.
-          uploadSwatch.dataset.accent = hex;
-          uploadSwatch.title = 'Custom background (uploaded)';
-          uploadSwatch.setAttribute('aria-label', 'Custom uploaded background, accent color picked automatically from the image');
-          selectSwatch(uploadSwatch);
-          applyAccent(hex);
-          applyBackground(dataUrl);
-          applyHeaderTextMode(headerMode);
-          showAccentPicker(hex);
-          selectedBackgroundValue = dataUrl;
-        };
-        img.onerror = () => {
-          alert("Couldn't read that image — try a different file.");
-        };
-        img.src = dataUrl;
+        openBgCrop(reader.result, (croppedDataUrl) => {
+          const img = new Image();
+          img.onload = () => {
+            // Dominant color (and the light/dark header-text call it
+            // drives) is picked from the CROPPED result, not the raw
+            // upload — both should match what's actually going to be
+            // visible, not some part the user panned away from.
+            const { hex, headerMode } = extractDominantColor(img);
+            // Keep the upload swatch showing the cloud icon rather than a
+            // tiny stretched/cropped thumbnail of the actual photo — at
+            // ~60px that preview reads as visual noise, not a useful
+            // preview. Selection is communicated the same way as every
+            // other swatch: the checkmark badge from .swatch.selected.
+            uploadSwatch.dataset.accent = hex;
+            uploadSwatch.title = 'Custom background (uploaded)';
+            uploadSwatch.setAttribute('aria-label', 'Custom uploaded background, accent color picked automatically from the image');
+            selectSwatch(uploadSwatch);
+            applyAccent(hex);
+            applyBackground(croppedDataUrl);
+            applyHeaderTextMode(headerMode);
+            showAccentPicker(hex);
+            selectedBackgroundValue = croppedDataUrl;
+          };
+          img.onerror = () => {
+            alert("Couldn't read that image — try a different file.");
+          };
+          img.src = croppedDataUrl;
+        });
       };
       reader.readAsDataURL(file);
     }
