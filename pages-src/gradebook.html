@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Gradebook</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from grades.html /
+     course-home.html so this page reads as the same app. See
+     architecture-decisions.md re: promoting this to a real shared
+     stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+    /* A/B/C/D/F letter-grade color scale (2026-08-31, per Martin's
+       request) — A and C reuse the existing good/mid tokens above (they
+       already read as "green"/"amber"), F reuses bad ("red"); B and D
+       are new in-between stops so all five letters read as a smooth
+       green→red gradient rather than only three buckets. */
+    --grade-b: #5c8a3f;
+    --grade-d: #c1602f;
+    /* Set per-course at load (see JS setCourseVars), same convention as
+       course-home.html — everything specific to "whose gradebook this
+       is" reads from these instead of a fixed color, so the one page
+       genuinely serves any of the six sample courses via ?course=. */
+    --course-color: #a67a22;
+    --course-color-dark: #8a6519;
+    --course-color-tint: rgba(166, 122, 34, 0.14);
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    /* Neutral black instead of a baked-in accent gradient here —
+       2026-09-11, per Martin. This is only ever visible for a split
+       second on reload/navigation, before applyStoredTheme() (or this
+       page's own appearance-reading script) sets the user's actual
+       saved background over it. The old default was the sample
+       red-orange gradient baked into this file, which read as a real
+       glitch flashing in between pages; a neutral black reads as
+       "still loading" instead, and matches the app's own Black
+       preset (#0c0c0e) so it's not a color that appears nowhere else
+       in the app. */
+    background-color: #0c0c0e;
+    background-image: none;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 116px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 900px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- both cards grow
+      to their natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* Wraps the two cards below, stacked at their natural content height;
+     .page (above) scrolls as a whole when the stack runs taller than
+     the viewport. */
+  .gb-scroll {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Top bar ---------- */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.82);
+    font-weight: 800;
+    font-size: 0.76rem;
+    padding: 0;
+    margin: 0 0 6px 4px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .back-link svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+  .back-link:hover { color: #fff; }
+  .back-link:focus-visible { outline: none; text-decoration: underline; }
+
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+  .title-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; }
+  .title-tick { width: 5px; height: 30px; border-radius: 999px; flex-shrink: 0; }
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.5rem, 3.2vw, 2rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.82rem;
+    margin: 5px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- Cards, same system as every other page ---------- */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+    margin-bottom: 14px;
+  }
+  .card-inner {
+    padding: 20px 22px 20px;
+  }
+
+  .section-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .section-head-row h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  .section-head-row .course-total { font-size: 0.76rem; font-weight: 700; color: var(--text-faint); }
+
+  /* ---------- Current + Predicted Grade hero — same idiom as
+     course-home.html's grade-hero, plus a Grade Calculator button
+     alongside per this page's own wireframe (Gradebook.pdf). ---------- */
+  .grade-hero-row { display: flex; align-items: stretch; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+  .grade-hero-block { flex: 1; min-width: 140px; background: var(--panel-inner); border-radius: var(--window-radius-md); padding: 14px 16px; }
+  .grade-hero-label { font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin: 0 0 4px; }
+  .grade-hero-val { font-size: 2.1rem; font-weight: 900; font-style: italic; line-height: 1; }
+  /* Descendant selectors, not compound ones — curVal's own letter grade
+     is a separate inner <span class="a|b|c|d|f"> nested inside the
+     #curVal.grade-hero-val element (see the JS below), not an element
+     that carries both classes itself. A pre-existing bug caught while
+     reworking this for A-F coloring (2026-08-31): the old
+     .grade-hero-val.good/.mid/.bad compound selectors had the same
+     mismatch and never actually matched anything, so the current-grade
+     letter has always silently rendered in the default text color. */
+  .grade-hero-val .a { color: var(--grade-good); }
+  .grade-hero-val .b { color: var(--grade-b); }
+  .grade-hero-val .c { color: var(--grade-mid); }
+  .grade-hero-val .d { color: var(--grade-d); }
+  .grade-hero-val .f { color: var(--grade-bad); }
+  .grade-hero-pct { font-size: 0.8rem; font-weight: 700; color: var(--text-faint); margin-left: 6px; font-style: normal; }
+  .grade-hero-predicted { cursor: help; }
+  .grade-hero-predicted:hover, .grade-hero-predicted:focus-visible { filter: brightness(0.96); }
+  .grade-hero-predicted:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .grade-hero-trend { display: inline-flex; align-items: center; gap: 3px; font-weight: 800; }
+  .grade-hero-trend .arrow { width: 15px; display: inline-flex; justify-content: center; font-size: 1.1rem; }
+  .grade-hero-trend.up .arrow { color: var(--grade-good); }
+  .grade-hero-trend.down .arrow { color: var(--grade-bad); }
+  .grade-hero-trend.flat .arrow { color: var(--text-faint); }
+  .grade-hero-updated { font-size: 0.7rem; color: var(--text-faint); margin: 12px 2px 0; }
+
+  .gb-open-calc-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 9px 16px 9px 13px;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.78rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .gb-open-calc-btn svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .gb-open-calc-btn:hover { background: var(--accent-dark); }
+  .gb-open-calc-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  /* ---------- Assignments / grade breakdown — copied verbatim from
+     grades.html's Gradebook pop-out (.gb-category family), just laid
+     out as a full page section instead of inside a modal. ---------- */
+  .gb-category { margin-top: 16px; }
+  .gb-category-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .gb-category-name { font-weight: 800; font-size: 0.86rem; color: var(--text-dark); }
+  .gb-category-weight { font-size: 0.72rem; font-weight: 700; color: var(--text-faint); }
+  .gb-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--panel-inner);
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .gb-bar-fill { height: 100%; border-radius: 999px; }
+  .gb-assign-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 0.8rem;
+  }
+  .gb-assign-title { color: var(--text-dark); font-weight: 600; }
+  .gb-assign-score { color: var(--text-muted); font-weight: 700; white-space: nowrap; }
+  .gb-assign-row.ungraded .gb-assign-title,
+  .gb-assign-row.ungraded .gb-assign-score {
+    color: var(--text-faint);
+    font-style: italic;
+    font-weight: 600;
+  }
+  /* Demonstrated Skills rows (2026-08-31 rework, corrected 2026-09-01) —
+     per Martin's correction, Skills is now just another GRADEBOOK
+     category (like Tests or Homework), weighted differently, not a
+     separate parallel track — its rows score and display exactly like
+     any other graded assignment (a colored letter + raw fraction, e.g.
+     "A 5/5"), not a qualitative Demonstrated/Developing/Not Yet pill
+     (that pill design was replaced 2026-09-01 after Martin shared a real
+     Schoology gradebook screenshot showing a skills category rendering
+     its items as plain scored assignments). The teacher-note sub-line
+     these rows used to also show was removed the same day, also per
+     Martin — every row uses the plain single-line layout now. */
+  .gb-assign-score .a { color: var(--grade-good); }
+  .gb-assign-score .b { color: var(--grade-b); }
+  .gb-assign-score .c { color: var(--grade-mid); }
+  .gb-assign-score .d { color: var(--grade-d); }
+  .gb-assign-score .f { color: var(--grade-bad); }
+
+  /* ---------- Predicted-grade reasoning popup — copied verbatim from
+     grades.html's .grade-popup. ---------- */
+  .grade-popup {
+    position: fixed;
+    z-index: 50;
+    width: 272px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 22px 48px -16px rgba(0,0,0,0.5);
+    padding: 14px 16px 10px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+  }
+  .grade-popup.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .grade-popup h3 { margin: 0 0 2px; font-size: 0.82rem; font-weight: 800; color: var(--text-dark); }
+  .grade-popup .popup-sub { font-size: 0.7rem; color: var(--text-muted); margin: 0 0 8px; line-height: 1.4; }
+  .grade-popup .popup-sub strong { color: var(--text-dark); }
+  .grade-popup svg { display: block; overflow: visible; }
+  .grade-popup .popup-foot { font-size: 0.62rem; color: var(--text-faint); margin: 6px 0 0; text-align: right; font-style: italic; }
+  @media (prefers-reduced-motion: reduce) { .grade-popup { transition: none; } }
+
+  /* ---------- Bottom nav — copied verbatim from course-home.html. ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+
+  /* ---------- Modal shell + Grade Calculator — copied verbatim from
+     grades.html's #calcModal, scoped to this page's single course (no
+     course picker needed — the URL already says which one). ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10, 8, 6, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; z-index: 60;
+    opacity: 0; visibility: hidden; transition: opacity 0.15s ease;
+  }
+  .modal-overlay.show { opacity: 1; visibility: visible; }
+  .modal-box {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    max-width: 380px; width: 100%;
+    padding: 22px 24px;
+    box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);
+    transform: translateY(8px);
+    transition: transform 0.15s ease;
+  }
+  .modal-overlay.show .modal-box { transform: translateY(0); }
+  /* .wide (the Grade Calculator) scrolls internally — the scrolling has
+     to happen on an inner wrapper (.modal-box-scroll), not this element
+     itself, or the browser's native scrollbar renders at this box's flat
+     edge and pokes out past its own rounded corners (reported 2026-09-01
+     by Martin — a screenshot showed the scrollbar thumb sticking out
+     above/below the modal). This element now just clips (overflow:
+     hidden + the border-radius it already had) and un-pads itself so all
+     padding — and the actual overflow-y: auto — moves to the inner div,
+     whose content therefore never draws past the rounded corner. */
+  .modal-box.wide { max-width: 520px; max-height: 85vh; overflow: hidden; padding: 0; }
+  .modal-box-scroll { max-height: 85vh; overflow-y: auto; padding: 22px 24px; }
+  .modal-close {
+    float: right;
+    background: var(--panel-inner);
+    border: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .modal-close:hover { color: var(--text-dark); }
+  .modal-box h3 { margin: 2px 0 2px; font-size: 1.1rem; font-weight: 900; font-style: italic; color: var(--text-dark); }
+  .modal-code { font-size: 0.76rem; font-weight: 700; color: var(--text-faint); margin: 0 0 4px; }
+
+  .calc-hero {
+    text-align: center;
+    background: var(--panel-inner);
+    border-radius: var(--window-radius-md);
+    padding: 14px 10px 12px;
+    margin: 14px 0 16px;
+  }
+  .calc-hero .calc-hero-label { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
+  .calc-hero .calc-hero-val { font-size: 1.9rem; font-weight: 900; font-style: italic; margin-top: 2px; }
+  .calc-hero .calc-hero-pct { font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-left: 6px; font-style: normal; }
+  .calc-category { margin-bottom: 14px; }
+  .calc-category-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .calc-category-name { font-weight: 800; font-size: 0.82rem; color: var(--text-dark); }
+  .calc-category-weight { font-size: 0.7rem; font-weight: 700; color: var(--text-faint); }
+  .calc-assign-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 0.78rem;
+  }
+  .calc-assign-title { color: var(--text-dark); font-weight: 600; }
+  .calc-assign-score { color: var(--text-muted); font-weight: 700; white-space: nowrap; }
+  .calc-input {
+    width: 48px;
+    padding: 4px 6px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text-dark);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-align: right;
+    /* Extra breathing room before the "/ out-of-points" text next to it
+       (2026-09-01, per Martin) — the input and its label used to sit
+       flush against each other. */
+    margin-right: 6px;
+  }
+  .calc-input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .calc-input.hyp { background: rgba(217, 74, 43, 0.08); border-color: var(--accent); }
+  /* Fixed width (2026-09-01, per Martin: the score boxes didn't line up
+     into a clean column) — without this, "/ 5" vs "/ 50" are different
+     text widths, and since .calc-assign-score is pinned to the row's
+     right edge, that difference pushed the input box itself left or
+     right row to row. A fixed-width label keeps every input's left edge
+     in the same column regardless of how many digits the point value has. */
+  .calc-out-of { display: inline-block; width: 30px; text-align: left; color: var(--text-muted); font-weight: 700; }
+  .calc-divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  /* Final Exam mini-calculator (reworked 2026-09-01, per Martin, to match
+     a reference "Final Grade Calculator" tool he shared) — used to be
+     gated behind an "Include a hypothetical final assessment" checkbox
+     with an explanatory paragraph; both are gone. The three fields are
+     always visible and always live: Current grade / Grade you want /
+     Final exam weight, solving for the score still needed rather than
+     projecting a score forward like the category inputs above do. */
+  .calc-final-heading { font-weight: 800; font-size: 0.82rem; color: var(--text-dark); margin: 0 0 8px; }
+  .calc-final-inputs { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .calc-final-field { flex: 1 1 100px; min-width: 90px; }
+  .calc-final-field label { display: block; font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); margin-bottom: 4px; }
+  .calc-final-field input {
+    width: 100%;
+    padding: 7px 9px;
+    border-radius: var(--window-radius-sm);
+    border: 1px solid var(--border);
+    background: var(--panel-bg);
+    color: var(--text-dark);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 0.82rem;
+    box-sizing: border-box;
+  }
+  .calc-final-field input:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .calc-final-answer {
+    background: var(--panel-inner);
+    border-radius: var(--window-radius-sm);
+    padding: 10px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-dark);
+    line-height: 1.45;
+    margin: 0 0 4px;
+    min-height: 1.2em;
+  }
+  .calc-final-answer:empty { display: none; }
+  .calc-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+  .calc-reset-btn {
+    background: var(--panel-inner);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 15px;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.76rem;
+    color: var(--text-dark);
+    cursor: pointer;
+  }
+  .calc-reset-btn:hover { background: var(--border); }
+  .calc-reset-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  @media (max-width: 560px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+    .section-head-row { align-items: flex-start; }
+    .gb-open-calc-btn { width: 100%; justify-content: center; }
+    .grade-hero-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <button class="back-link" type="button" id="backToHubBtn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      <span id="backLabel">Back to Course Hub</span>
+    </button>
+
+    <div class="topbar">
+      <div class="title-wrap">
+        <span class="title-tick" id="titleTick"></span>
+        <div>
+          <h1 class="title" id="gbTitle">Gradebook</h1>
+          <p class="subtitle" id="gbSubtitle"></p>
+        </div>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="gb-scroll">
+    <div class="card">
+      <div class="card-inner">
+        <div class="section-head-row">
+          <h2>Current + Predicted Grade</h2>
+          <button class="gb-open-calc-btn" id="openCalcBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8.01" y2="11"/><line x1="12" y1="11" x2="12.01" y2="11"/><line x1="16" y1="11" x2="16.01" y2="11"/><line x1="8" y1="15" x2="8.01" y2="15"/><line x1="12" y1="15" x2="12.01" y2="15"/><line x1="16" y1="15" x2="16.01" y2="15"/><line x1="8" y1="19" x2="8.01" y2="19"/><line x1="12" y1="19" x2="12.01" y2="19"/></svg>
+            Final Grade Calculator
+          </button>
+        </div>
+        <div class="grade-hero-row">
+          <div class="grade-hero-block">
+            <p class="grade-hero-label">Current Grade</p>
+            <span class="grade-hero-val" id="curVal"></span>
+          </div>
+          <div class="grade-hero-block grade-hero-predicted" id="predBlock" tabindex="0" role="button" aria-haspopup="true">
+            <p class="grade-hero-label">Predicted Grade</p>
+            <span class="grade-hero-val" id="predVal"></span>
+          </div>
+        </div>
+        <p class="grade-hero-updated" id="gradingPeriodNote"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-inner">
+        <div class="section-head-row">
+          <h2>Assignments</h2>
+          <span class="course-total" id="gradeSummaryTotal"></span>
+        </div>
+        <div id="gbCategories"></div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="grade-popup" id="gradePopup" role="tooltip"></div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner">
+      <button class="nav-link" type="button" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Grade Calculator — same site-map.md Final Grade Calculator spec as
+       grades.html's per-course modal, copied verbatim; scoped to this
+       page's own single course, so there's no course picker to wire. -->
+  <div class="modal-overlay" id="calcModal">
+    <div class="modal-box wide" role="dialog" aria-modal="true" aria-labelledby="calcCourseName">
+      <div class="modal-box-scroll">
+        <button class="modal-close" id="calcCloseBtn" type="button" aria-label="Close grade calculator">✕</button>
+        <h3 id="calcCourseName"></h3>
+        <p class="modal-code">Final Grade Calculator</p>
+        <div class="calc-hero">
+          <div class="calc-hero-label" id="calcHeroLabel">Current grade</div>
+          <div class="calc-hero-val"><span id="calcHeroLetter"></span><span class="calc-hero-pct" id="calcHeroPct"></span></div>
+        </div>
+        <div id="calcCategories"></div>
+        <hr class="calc-divider">
+        <h4 class="calc-final-heading">Final Exam</h4>
+        <div class="calc-final-inputs">
+          <div class="calc-final-field">
+            <label for="calcFinalCurrent">Current grade (%)</label>
+            <input type="number" id="calcFinalCurrent" min="0" max="100" step="0.1">
+          </div>
+          <div class="calc-final-field">
+            <label for="calcFinalWant">Grade you want (%)</label>
+            <input type="number" id="calcFinalWant" min="0" max="100" step="0.1" placeholder="e.g. 90">
+          </div>
+          <div class="calc-final-field">
+            <label for="calcFinalWeight">Final exam weight (%)</label>
+            <input type="number" id="calcFinalWeight" min="1" max="100" value="20">
+          </div>
+        </div>
+        <p class="calc-final-answer" id="calcFinalAnswer"></p>
+        <div class="calc-actions">
+          <button class="calc-reset-btn" id="calcResetBtn" type="button">Reset to real grades</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
+    // Sample data — same six courses/HISTORY/GRADEBOOK as grades.html,
+    // duplicated locally per the established cross-page convention (see
+    // architecture-decisions.md's shared-stylesheet note).
+    // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course (in home.html's Customize editor
+    // or courses.html's Reorder tool — the only places that WRITE these)
+    // used to be invisible everywhere else, since every page just
+    // re-generated its own hardcoded COURSES array from scratch on load.
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present); schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page only READS both — applyCourseCustomizationsInPlace()
+    // is called right after the raw array literal below, mutating COURSES
+    // in place, so it's already the customized/reordered version before
+    // anything on this page ever renders it. Same defensive
+    // try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
+    const COURSES = [
+      { id: 'apchem', name: 'AP Chemistry', code: '76_M0431', period: 2, teacher: 'Alvarez', section: '1204', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up' },
+      { id: 'algebra2', name: 'Algebra II', code: '76_S0512', period: 3, teacher: 'Whitfield', section: '1188', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat' },
+      { id: 'english10', name: 'English 10', code: '76_F0288', period: 4, teacher: 'Cho', section: '1350', color: '#6b8f5e', grade: 'C+', pct: 78, predicted: 'C', predictedPct: 74, trend: 'down' },
+      { id: 'ushistory', name: 'U.S. History', code: '76_R0367', period: 1, teacher: 'Bennett', section: '1092', color: '#a15c4f', grade: 'A-', pct: 91, predicted: 'A-', predictedPct: 91, trend: 'flat' },
+      { id: 'spanish3', name: 'Spanish III', code: '76_G0295', period: 5, teacher: 'Ortiz', section: '1417', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up' },
+      { id: 'pe', name: 'PE', code: '76_P0300', period: 6, teacher: 'Reyes', section: '1125', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat' },
+    ];
+    applyCourseCustomizationsInPlace(COURSES);
+    function findCourse(id) { return COURSES.find(c => c.id === id); }
+
+    // Escapes a value for interpolation into an HTML string — safe both in
+    // text positions and inside quoted attribute values. Every `${...}`
+    // below carrying course, gradebook or assignment data must go through
+    // it: in the live app those strings come from teachers, so rendered raw
+    // into innerHTML a title like `<img src=x onerror=...>` executes in our
+    // own origin. Same helper as home.html — see its comment for the full
+    // reasoning. Do NOT wrap values that are themselves markup (the chart
+    // fragments, scoreDisplay, calcAssignQualifier).
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+      ));
+    }
+
+    const HISTORY = {
+      apchem: { points: [72, 79, 84, 88, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      algebra2: { points: [94, 96, 93, 97, 95], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      english10: { points: [88, 82, 79, 76, 73], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      ushistory: { points: [89, 93, 88, 92, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      spanish3: { points: [76, 80, 83, 85, 87], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      pe: { points: [96, 98, 95, 97, 96], dates: ['Aug 2', 'Aug 6', 'Aug 10', 'Aug 16', 'Aug 22'] },
+    };
+
+    const GRADEBOOK = {
+      apchem: { categories: [
+        { name: 'Tests', weight: 40, assignments: [
+          { title: 'Unit 1 Test', score: 42, points: 50, graded: true },
+          { title: 'Unit 2 Test', score: 45, points: 50, graded: true },
+        ]},
+        { name: 'Labs', weight: 30, assignments: [
+          { title: 'Titration Lab', score: 18, points: 20, graded: true },
+          { title: 'Lab Report #3', score: 17, points: 20, graded: true },
+          { title: 'Lab Report #4', points: 20, graded: false },
+        ]},
+        { name: 'Homework', weight: 30, assignments: [
+          { title: 'Problem Set 1', score: 9, points: 10, graded: true },
+          { title: 'Problem Set 2', score: 8, points: 10, graded: true },
+          { title: 'Problem Set 3', score: 10, points: 10, graded: true },
+        ]},
+      ]},
+      algebra2: { categories: [
+        { name: 'Tests', weight: 50, assignments: [
+          { title: 'Unit 2 Test', score: 47, points: 50, graded: true },
+          { title: 'Unit 3 Test', score: 48, points: 50, graded: true },
+        ]},
+        { name: 'Quizzes', weight: 30, assignments: [
+          { title: 'Quiz 4', score: 9, points: 10, graded: true },
+          { title: 'Quiz 5', score: 10, points: 10, graded: true },
+          { title: 'Quiz 6', points: 10, graded: false },
+        ]},
+        { name: 'Homework', weight: 20, assignments: [
+          { title: 'Problem Set 6', score: 10, points: 10, graded: true },
+          { title: 'Problem Set 7', score: 9, points: 10, graded: true },
+        ]},
+      ]},
+      english10: { categories: [
+        { name: 'Essays', weight: 45, assignments: [
+          { title: 'Essay 1: Narrative', score: 34, points: 40, graded: true },
+          { title: 'Essay 2: Rhetorical Analysis', score: 27, points: 40, graded: true },
+        ]},
+        { name: 'Discussions', weight: 25, assignments: [
+          { title: 'Discussion 1', score: 8, points: 10, graded: true },
+          { title: 'Chapter 6 Discussion', points: 10, graded: false },
+          { title: 'Discussion 3', score: 7, points: 10, graded: true },
+        ]},
+        { name: 'Homework', weight: 30, assignments: [
+          { title: 'Reading Log 1', score: 8, points: 10, graded: true },
+          { title: 'Reading Log 2', score: 7, points: 10, graded: true },
+          { title: 'Reading Log 3', score: 9, points: 10, graded: true },
+        ]},
+      ]},
+      ushistory: { categories: [
+        { name: 'Tests', weight: 40, assignments: [
+          { title: 'Unit 1 Test', score: 46, points: 50, graded: true },
+          { title: 'Unit 2 Test', score: 45, points: 50, graded: true },
+        ]},
+        { name: 'Essays', weight: 30, assignments: [
+          { title: 'DBQ Essay', score: 36, points: 40, graded: true },
+          { title: 'Reading Response', points: 40, graded: false },
+        ]},
+        { name: 'Homework', weight: 30, assignments: [
+          { title: 'Source Analysis 1', score: 9, points: 10, graded: true },
+          { title: 'Source Analysis 2', score: 9, points: 10, graded: true },
+          { title: 'Source Analysis 3', score: 10, points: 10, graded: true },
+        ]},
+      ]},
+      spanish3: { categories: [
+        { name: 'Tests', weight: 35, assignments: [
+          { title: 'Unit 2 Test', score: 40, points: 50, graded: true },
+          { title: 'Unit 3 Test', score: 43, points: 50, graded: true },
+        ]},
+        { name: 'Quizzes', weight: 30, assignments: [
+          { title: 'Vocab Quiz 4', score: 8, points: 10, graded: true },
+          { title: 'Vocab Quiz 5', score: 9, points: 10, graded: true },
+          { title: 'Vocab Worksheet', points: 10, graded: false },
+        ]},
+        { name: 'Homework', weight: 35, assignments: [
+          { title: 'Workbook Ch. 5', score: 9, points: 10, graded: true },
+          { title: 'Workbook Ch. 6', score: 8, points: 10, graded: true },
+          { title: 'Workbook Ch. 7', score: 8, points: 10, graded: true },
+        ]},
+      ]},
+      pe: { categories: [
+        { name: 'Participation', weight: 40, assignments: [
+          { title: 'Week 1', score: 10, points: 10, graded: true },
+          { title: 'Week 2', score: 10, points: 10, graded: true },
+          { title: 'Week 3', score: 9, points: 10, graded: true },
+        ]},
+        { name: 'Skills Tests', weight: 25, assignments: [
+          { title: 'Fitness Test', score: 47, points: 50, graded: true },
+          { title: 'Unit Skills Check', score: 49, points: 50, graded: true },
+        ]},
+        { name: 'Homework', weight: 15, assignments: [
+          { title: 'Wellness Log', score: 10, points: 10, graded: true },
+          { title: 'Reflection', score: 9, points: 10, graded: true },
+        ]},
+        // Demonstrated Skills (2026-08-31, reworked same day per Martin's
+        // correction) — originally built as a separate parallel
+        // competency track sitting outside the weighted grade entirely.
+        // Martin: "demonstrated skills is a part of the gradebook, its
+        // just a catagory just like assignments, they both are grades,
+        // just diff catagories and weighted diff." So this is now a
+        // normal GRADEBOOK category like any other, just with a rubric
+        // scale (Demonstrated/Developing/Not Yet Demonstrated) instead of
+        // a raw point score — each level is still given a real
+        // score/points pair (10/8/6 out of 10) so it feeds the exact same
+        // weighted-average math every other category uses; `status`/
+        // `note` are extra fields renderCategories()/the Calculator read
+        // to show the qualitative pill + teacher note instead of a plain
+        // fraction. The other three PE categories' weights were scaled
+        // down from 50/30/20 to make room for this one at 20%, so the
+        // course's categories still sum to 100.
+        // Scored out of 5, not 10 (corrected 2026-09-01) — per Martin's
+        // real Schoology gradebook screenshot, a skills-rubric item there
+        // is a normal small-point assignment (his example: "Unit 1
+        // Lesson 1 ... A 5/5"), not a 10-point one. Scores below keep the
+        // same percentages as before (100/80/60%) so the category
+        // average is unchanged, just expressed out of 5 instead of 10.
+        // Qualitative rubric labels (Demonstrated/Developing/Not Yet
+        // Demonstrated) removed 2026-09-01 per Martin: real Schoology
+        // doesn't expose that wording to students/parents, only the
+        // score. The `status` field (and the SKILL_LABEL lookup that
+        // rendered it) is gone; these rows are now indistinguishable in
+        // shape from any other graded assignment — just score/points/
+        // graded. The teacher `note` field these rows used to also carry
+        // (rendered as a sub-line under the title) was removed the same
+        // day too, also per Martin — real Schoology doesn't show a note
+        // like that either.
+        { name: 'Demonstrated Skills', weight: 20, assignments: [
+          { title: 'Teamwork & Communication', score: 5, points: 5, graded: true },
+          { title: 'Sportsmanship', score: 5, points: 5, graded: true },
+          { title: 'Skill Execution', score: 4, points: 5, graded: true },
+          { title: 'Effort & Participation', score: 5, points: 5, graded: true },
+          { title: 'Safety Awareness', score: 3, points: 5, graded: true },
+        ]},
+      ]},
+    };
+
+    const GRADING_PERIOD = 'HS-Fall: 2026-08-17 - 2026-12-18';
+
+    // A/B/C/D/F color coding (2026-08-31, per Martin's request) — each
+    // letter tier gets its own distinct color instead of the old 3-way
+    // good/mid/bad grouping (which lumped B and C together, and D with
+    // F). GRADE_COLOR is the single source of truth for both the CSS
+    // class name (gradeBand) and the actual color value (for the one
+    // place — the Calculator's hero letter — that sets color via inline
+    // style rather than a class).
+    const GRADE_COLOR = { a: 'var(--grade-good)', b: 'var(--grade-b)', c: 'var(--grade-mid)', d: 'var(--grade-d)', f: 'var(--grade-bad)' };
+    function gradeBand(letter) {
+      const l = letter[0];
+      if (l === 'A') return 'a';
+      if (l === 'B') return 'b';
+      if (l === 'C') return 'c';
+      if (l === 'D') return 'd';
+      return 'f';
+    }
+    function letterFromPct(pct) {
+      if (pct >= 97) return 'A+';
+      if (pct >= 93) return 'A';
+      if (pct >= 90) return 'A-';
+      if (pct >= 87) return 'B+';
+      if (pct >= 83) return 'B';
+      if (pct >= 80) return 'B-';
+      if (pct >= 77) return 'C+';
+      if (pct >= 73) return 'C';
+      if (pct >= 70) return 'C-';
+      if (pct >= 67) return 'D+';
+      if (pct >= 63) return 'D';
+      if (pct >= 60) return 'D-';
+      return 'F';
+    }
+    // Category progress bar coloring (2026-09-01, per Martin: "if the
+    // grade of a category is under 90, start making the color red...
+    // dark red...if your grade is a F or lower") — a continuous
+    // green-through-dark-red gradient scoped to just the .gb-bar-fill
+    // bars, distinct from the discrete 5-tier GRADE_COLOR/gradeBand
+    // system used for letter-grade text elsewhere on this page. Fully
+    // green at 90%+ (matches the letter-grade "A" cutoff), interpolating
+    // through amber around the mid-70s, reaching fully dark red by 60%
+    // (the top of the F range) and staying there for anything lower.
+    const BAR_GREEN = [47, 125, 84];    // matches --grade-good
+    const BAR_AMBER = [212, 130, 34];   // transitional midpoint
+    const BAR_DARKRED = [122, 36, 26];  // darker than --grade-bad on purpose — this is the "F or lower" color Martin asked for
+    function lerpChannel(a, b, t) { return Math.round(a + (b - a) * t); }
+    function lerpRGB(c1, c2, t) { return `rgb(${lerpChannel(c1[0], c2[0], t)}, ${lerpChannel(c1[1], c2[1], t)}, ${lerpChannel(c1[2], c2[2], t)})`; }
+    function barColorForPct(pct) {
+      if (pct >= 90) return `rgb(${BAR_GREEN.join(', ')})`;
+      if (pct >= 75) return lerpRGB(BAR_GREEN, BAR_AMBER, (90 - pct) / (90 - 75));
+      if (pct >= 60) return lerpRGB(BAR_AMBER, BAR_DARKRED, (75 - pct) / (75 - 60));
+      return `rgb(${BAR_DARKRED.join(', ')})`;
+    }
+
+    const TREND_ARROW = { up: '↗', down: '↘', flat: '–' };
+    const TREND_WORD = { up: 'Trending up', down: 'Trending down', flat: 'Holding steady' };
+
+    // ------------------------------------------------------------------
+    // Routing — reads ?course= same as every other course-scoped page,
+    // falling back to PE since that's this page's own wireframe example
+    // (Gradebook.pdf was literally titled "PE Gradebook").
+    // ------------------------------------------------------------------
+    const courseId = new URLSearchParams(location.search).get('course') || 'pe';
+    const course = findCourse(courseId) || COURSES[0];
+
+    function setCourseVars() {
+      document.documentElement.style.setProperty('--course-color', course.color);
+      document.getElementById('titleTick').style.background = course.color;
+    }
+    setCourseVars();
+
+    document.title = `Schoolagy — ${course.name} Gradebook`;
+    document.getElementById('gbTitle').textContent = `${course.name} Gradebook`;
+    document.getElementById('gbSubtitle').textContent = `${course.code} · Pd:${course.period} ${course.teacher} - ${course.section}`;
+    document.getElementById('backToHubBtn').addEventListener('click', () => {
+      window.location.href = `course-home.html?course=${course.id}`;
+    });
+
+    document.getElementById('curVal').innerHTML = `<span class="${gradeBand(course.grade)}">${escapeHtml(course.grade)}</span><span class="grade-hero-pct">${escapeHtml(course.pct)}%</span>`;
+    document.getElementById('predVal').innerHTML = `<span class="grade-hero-trend ${escapeHtml(course.trend)}"><span class="arrow">${TREND_ARROW[course.trend]}</span>${escapeHtml(course.predicted)}</span><span class="grade-hero-pct">${escapeHtml(course.predictedPct)}%</span>`;
+    document.getElementById('predBlock').setAttribute('aria-label', `Why is ${course.name} predicted ${course.predicted}, ${course.predictedPct} percent? Show reasoning.`);
+    document.getElementById('gradingPeriodNote').textContent = `Grading period: ${GRADING_PERIOD}`;
+
+    // Assignments — the same read-only category/weight/progress-bar/
+    // assignment-row breakdown as grades.html's Gradebook pop-out,
+    // rendered as a full page section instead of a modal.
+    //
+    // Every graded row shows a colored letter grade (via
+    // gradeBand/GRADE_COLOR, derived from its own score/points through
+    // letterFromPct) in front of its raw fraction, e.g. "A 5/5" — this
+    // used to be Demonstrated Skills-only, now every assignment in every
+    // category gets it (2026-09-01, per Martin). Demonstrated Skills rows
+    // used to also carry a teacher-note sub-line under the title — that
+    // was removed the same day (also per Martin), so every row now uses
+    // the same plain one-line layout regardless of category.
+    //
+    // The category progress bar is colored on barColorForPct's continuous
+    // green-through-dark-red scale (see that function above), not a flat
+    // course-accent color or the discrete letter-grade bucket — a
+    // category with no graded work yet falls back to a neutral border
+    // color rather than implying an F.
+    function categoryAverage(assignments) {
+      let earned = 0, possible = 0;
+      assignments.forEach(a => { if (a.graded) { earned += a.score; possible += a.points; } });
+      return possible > 0 ? (earned / possible) * 100 : null;
+    }
+    function renderCategories() {
+      const gb = GRADEBOOK[course.id];
+      document.getElementById('gradeSummaryTotal').textContent = `${course.pct}% overall`;
+      document.getElementById('gbCategories').innerHTML = gb.categories.map(cat => {
+        const avg = categoryAverage(cat.assignments);
+        const barColor = avg !== null ? barColorForPct(avg) : 'var(--border)';
+        const rows = cat.assignments.map(a => {
+          const scoreDisplay = a.graded
+            ? (() => { const letter = letterFromPct((a.score / a.points) * 100); return `<span class="${gradeBand(letter)}">${letter}</span> ${escapeHtml(a.score)}/${escapeHtml(a.points)}`; })()
+            : 'Not yet graded';
+          return `
+            <div class="gb-assign-row ${a.graded ? '' : 'ungraded'}">
+              <span class="gb-assign-title">${escapeHtml(a.title)}</span>
+              <span class="gb-assign-score">${scoreDisplay}</span>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div class="gb-category">
+            <div class="gb-category-head">
+              <span class="gb-category-name">${escapeHtml(cat.name)}</span>
+              <span class="gb-category-weight">${escapeHtml(cat.weight)}% of grade${avg !== null ? ` · ${Math.round(avg)}% avg` : ''}</span>
+            </div>
+            <div class="gb-bar"><div class="gb-bar-fill" style="width:${avg !== null ? Math.min(100, Math.round(avg)) : 0}%; background:${barColor}"></div></div>
+            ${rows}
+          </div>
+        `;
+      }).join('');
+    }
+    renderCategories();
+
+    // ------------------------------------------------------------------
+    // Predicted-grade reasoning popup — ported verbatim from
+    // grades.html/course-home.html, own SVG pattern id so it can never
+    // collide with the other four pages that already have their own.
+    // ------------------------------------------------------------------
+    function niceBounds(values) {
+      const min = Math.min(...values), max = Math.max(...values);
+      let lo = Math.floor((min - 6) / 10) * 10;
+      let hi = Math.ceil((max + 6) / 10) * 10;
+      lo = Math.max(0, lo);
+      hi = Math.min(100, hi);
+      if (hi - lo < 20) { hi = Math.min(100, lo + 20); }
+      return [lo, hi];
+    }
+    function buildGradeChartSVG(c) {
+      const hist = HISTORY[c.id];
+      const allLabels = hist.dates.concat(['Predicted']);
+      const allValues = hist.points.concat([c.predictedPct]);
+      const [yLo, yHi] = niceBounds(allValues);
+      const W = 240, H = 108;
+      const padL = 26, padR = 6, padT = 10, padB = 16;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const xFor = i => padL + (i / (allLabels.length - 1)) * plotW;
+      const yFor = v => padT + plotH - ((v - yLo) / (yHi - yLo)) * plotH;
+      const yTicks = [yLo, Math.round((yLo + yHi) / 2), yHi];
+      const gridlines = yTicks.map(t => `
+        <line x1="${padL}" x2="${W - padR}" y1="${yFor(t)}" y2="${yFor(t)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${padL - 6}" y="${yFor(t) + 3}" text-anchor="end" font-size="8" fill="var(--text-faint)">${t}%</text>
+      `).join('');
+      const actualPts = hist.points.map((v, i) => [xFor(i), yFor(v)]);
+      const actualLine = actualPts.map(p => p.join(',')).join(' ');
+      const actualMarkers = actualPts.map(([x, y]) => `
+        <circle cx="${x}" cy="${y}" r="4" fill="${escapeHtml(c.color)}" stroke="var(--panel-bg)" stroke-width="2"/>
+      `).join('');
+      const predX = xFor(allLabels.length - 1), predY = yFor(c.predictedPct);
+      const lastActual = actualPts[actualPts.length - 1];
+      const predictedBand = `x="${lastActual[0]}" y="${padT}" width="${predX - lastActual[0]}" height="${plotH}"`;
+      const stripeDefs = `
+        <pattern id="predStripesGradebook" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="${escapeHtml(c.color)}" fill-opacity="0.08"/>
+          <line x1="0" y1="0" x2="0" y2="6" stroke="${escapeHtml(c.color)}" stroke-width="2.2"/>
+        </pattern>
+      `;
+      const xLabels = allLabels.map((lab, i) => `
+        <text x="${xFor(i)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="var(--text-faint)">${escapeHtml(lab === 'Predicted' ? 'Pred.' : lab)}</text>
+      `).join('');
+      return `
+        <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Line chart of ${escapeHtml(c.name)} assignment scores trending toward a predicted grade of ${escapeHtml(c.predictedPct)} percent">
+          <defs>${stripeDefs}</defs>
+          ${gridlines}
+          <rect ${predictedBand} fill="url(#predStripesGradebook)" stroke="none"/>
+          <polyline points="${actualLine}" fill="none" stroke="${escapeHtml(c.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="${lastActual[0]}" y1="${lastActual[1]}" x2="${predX}" y2="${predY}" stroke="${escapeHtml(c.color)}" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>
+          ${actualMarkers}
+          <circle cx="${predX}" cy="${predY}" r="4.5" fill="var(--panel-bg)" stroke="${escapeHtml(c.color)}" stroke-width="2"/>
+          <text x="${predX}" y="${predY - 10}" text-anchor="end" font-size="8.5" font-weight="800" fill="var(--text-dark)">${escapeHtml(c.predictedPct)}%</text>
+          ${xLabels}
+        </svg>
+      `;
+    }
+    function renderGradePopup(c) {
+      const hist = HISTORY[c.id];
+      const first = hist.points[0], lastGraded = hist.points[hist.points.length - 1];
+      return `
+        <h3>${escapeHtml(c.name)}</h3>
+        <p class="popup-sub">${TREND_WORD[c.trend]}: <strong>${escapeHtml(first)}% → ${escapeHtml(lastGraded)}%</strong> over the last ${hist.points.length} graded assignments, predicting <strong>${escapeHtml(c.predictedPct)}%</strong> (${escapeHtml(c.predicted)}).</p>
+        ${buildGradeChartSVG(c)}
+        <p class="popup-foot">Predicted grade extrapolates this trend — not a copy of the current grade.</p>
+      `;
+    }
+    const gradePopup = document.getElementById('gradePopup');
+    const predBlock = document.getElementById('predBlock');
+    let popupHideTimer = null;
+    function showGradePopup() {
+      clearTimeout(popupHideTimer);
+      gradePopup.innerHTML = renderGradePopup(course);
+      gradePopup.classList.add('show');
+      predBlock.setAttribute('aria-expanded', 'true');
+      const rect = predBlock.getBoundingClientRect();
+      const popupRect = gradePopup.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - popupRect.width / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - popupRect.width - 10));
+      let top = rect.top - popupRect.height - 10;
+      if (top < 10) top = rect.bottom + 10;
+      gradePopup.style.left = `${left}px`;
+      gradePopup.style.top = `${top}px`;
+    }
+    function hideGradePopup() { gradePopup.classList.remove('show'); predBlock.setAttribute('aria-expanded', 'false'); }
+    predBlock.addEventListener('mouseenter', showGradePopup);
+    predBlock.addEventListener('focus', showGradePopup);
+    predBlock.addEventListener('mouseleave', () => { popupHideTimer = setTimeout(hideGradePopup, 80); });
+    predBlock.addEventListener('blur', hideGradePopup);
+    predBlock.addEventListener('keydown', e => { if (e.key === 'Escape') { hideGradePopup(); predBlock.blur(); } });
+
+    // ------------------------------------------------------------------
+    // Modal open/close plumbing + Grade Calculator — copied verbatim
+    // from grades.html's #calcModal, minus the course-picker bits (this
+    // page only ever calculates for its own single `course`).
+    // ------------------------------------------------------------------
+    const calcModal = document.getElementById('calcModal');
+    function openModal(overlay) { overlay.classList.add('show'); document.addEventListener('keydown', escCloseHandler); }
+    function closeModal(overlay) { overlay.classList.remove('show'); document.removeEventListener('keydown', escCloseHandler); }
+    function escCloseHandler(e) { if (e.key === 'Escape' && calcModal.classList.contains('show')) closeModal(calcModal); }
+    calcModal.addEventListener('click', e => { if (e.target === calcModal) closeModal(calcModal); });
+
+    const calcCategories = document.getElementById('calcCategories');
+    const calcFinalCurrent = document.getElementById('calcFinalCurrent');
+    const calcFinalWant = document.getElementById('calcFinalWant');
+    const calcFinalWeight = document.getElementById('calcFinalWeight');
+    const calcFinalAnswer = document.getElementById('calcFinalAnswer');
+    const calcResetBtn = document.getElementById('calcResetBtn');
+    const calcHeroLabel = document.getElementById('calcHeroLabel');
+    const calcHeroLetter = document.getElementById('calcHeroLetter');
+    const calcHeroPct = document.getElementById('calcHeroPct');
+    let calcEdits = {};
+    // True once the user has typed into "Current grade" themselves — until
+    // then it stays synced to the live category-based projected grade
+    // above, same idea as an untouched per-assignment input tracking the
+    // real score.
+    let calcFinalCurrentTouched = false;
+
+    function assignKey(catName, title) { return catName + '::' + title; }
+
+    // A short muted qualifier shown after an assignment's title: "(not
+    // yet graded)" for a real ungraded item, context for what the
+    // pre-filled/blank number means. (The Demonstrated Skills rubric-
+    // label qualifier this used to also show, e.g. "(Demonstrated)", was
+    // removed 2026-09-01 along with the `status` field it read — per
+    // Martin, that wording isn't something real Schoology surfaces.)
+    function calcAssignQualifier(a) {
+      if (!a.graded) return ` <span style="color:var(--text-faint); font-weight:600;">(not yet graded)</span>`;
+      return '';
+    }
+
+    // Every assignment gets an editable input now (2026-08-31, per
+    // Martin's request to be able to change any grade — not just fill in
+    // an ungraded one — to see the hypothetical effect on the overall
+    // grade). A graded assignment's input is pre-filled with its real
+    // score; an ungraded one starts blank, same as before. Either way,
+    // `calcEdits` only holds what the user has actually typed — an
+    // untouched graded input still uses the real score in
+    // recomputeCalc() below, so simply opening the Calculator and not
+    // touching anything reproduces the real grade exactly.
+    function renderCalcCategories() {
+      const gb = GRADEBOOK[course.id];
+      calcCategories.innerHTML = gb.categories.map(cat => {
+        const rows = cat.assignments.map(a => {
+          const key = assignKey(cat.name, a.title);
+          const defaultVal = a.graded ? a.score : '';
+          const val = calcEdits[key] !== undefined ? calcEdits[key] : defaultVal;
+          return `
+            <div class="calc-assign-row">
+              <span class="calc-assign-title">${escapeHtml(a.title)}${calcAssignQualifier(a)}</span>
+              <span class="calc-assign-score">
+                <input class="calc-input hyp" type="number" min="0" placeholder="?" value="${escapeHtml(val)}" data-key="${escapeHtml(key)}" data-points="${escapeHtml(a.points)}" aria-label="Score for ${escapeHtml(a.title)}, out of ${escapeHtml(a.points)}, extra credit above ${escapeHtml(a.points)} allowed"><span class="calc-out-of">/ ${escapeHtml(a.points)}</span>
+              </span>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div class="calc-category">
+            <div class="calc-category-head">
+              <span class="calc-category-name">${escapeHtml(cat.name)}</span>
+              <span class="calc-category-weight" data-base-weight="${escapeHtml(cat.weight)}">${escapeHtml(cat.weight)}% of grade</span>
+            </div>
+            ${rows}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // The category breakdown always reflects its own real weights now —
+    // the old "scale categories down to make room for a hypothetical
+    // final" behavior went away with the checkbox it was tied to
+    // (2026-09-01). The Final Exam section below is a separate, simpler
+    // calculation: given a current grade, a target grade, and how much
+    // the final is worth, solve for the score still needed — it doesn't
+    // feed back into the category list above.
+    function recomputeCalc() {
+      const gb = GRADEBOOK[course.id];
+      let overall = 0;
+      gb.categories.forEach(cat => {
+        let earned = 0, possible = 0;
+        cat.assignments.forEach(a => {
+          const key = assignKey(cat.name, a.title);
+          const raw = calcEdits[key];
+          let scoreToUse = null;
+          if (raw !== undefined && raw !== '' && !isNaN(Number(raw))) {
+            scoreToUse = Number(raw);
+          } else if (a.graded) {
+            scoreToUse = a.score;
+          }
+          // else: still ungraded and no hypothetical entered — excluded,
+          // same as before (doesn't count as a zero).
+          if (scoreToUse !== null) { earned += scoreToUse; possible += a.points; }
+        });
+        const avg = possible > 0 ? (earned / possible) * 100 : 0;
+        overall += avg * (cat.weight / 100);
+      });
+
+      const pct = Math.max(0, Math.min(100, overall));
+      const letter = letterFromPct(pct);
+      calcHeroLetter.textContent = letter;
+      calcHeroLetter.style.color = GRADE_COLOR[gradeBand(letter)];
+      calcHeroPct.textContent = `${pct.toFixed(1)}%`;
+      // "Current grade" until an assignment's real score is actually
+      // edited (calcEdits empty means every input is still showing its
+      // real value) — flips to "Projected grade" the moment there's a
+      // hypothetical in play, per Martin.
+      calcHeroLabel.textContent = Object.keys(calcEdits).length > 0 ? 'Projected grade' : 'Current grade';
+
+      calcCategories.querySelectorAll('.calc-category').forEach((box, i) => {
+        const cat = gb.categories[i];
+        box.querySelector('.calc-category-weight').textContent = `${cat.weight}% of grade`;
+      });
+
+      // Keep "Current grade" synced to the live projected grade above
+      // unless the user has typed their own number in — same touched-flag
+      // idiom used for the per-assignment inputs.
+      if (!calcFinalCurrentTouched) calcFinalCurrent.value = pct.toFixed(1);
+      updateFinalAnswer();
+    }
+
+    // Final Exam mini-calculator (2026-09-01, per Martin's reference
+    // screenshot of a standalone "Final Grade Calculator" tool) — solves
+    // for the score needed on the final, the reverse of the category
+    // calculator above (which projects a grade forward from scores).
+    // overall = current*(1 - w) + needed*w  →  needed = (want - current*(1-w)) / w
+    function updateFinalAnswer() {
+      const current = Number(calcFinalCurrent.value);
+      const wantRaw = calcFinalWant.value;
+      const weight = Math.max(1, Math.min(100, Number(calcFinalWeight.value) || 0));
+      if (wantRaw === '' || isNaN(current) || isNaN(weight)) {
+        calcFinalAnswer.textContent = '';
+        return;
+      }
+      const want = Number(wantRaw);
+      if (isNaN(want)) { calcFinalAnswer.textContent = ''; return; }
+      const w = weight / 100;
+      const needed = (want - current * (1 - w)) / w;
+      if (needed > 100) {
+        const bestCase = (current * (1 - w) + 100 * w).toFixed(1);
+        calcFinalAnswer.innerHTML = `Even a perfect <strong>100%</strong> on the final won't get you to <strong>${want}%</strong> — the highest you could reach is <strong>${bestCase}%</strong>.`;
+      } else if (needed <= 0) {
+        calcFinalAnswer.innerHTML = `You're already there — even a <strong>0%</strong> on the final keeps you at or above <strong>${want}%</strong>.`;
+      } else {
+        calcFinalAnswer.innerHTML = `You need <strong>${needed.toFixed(1)}%</strong> on the final exam to get <strong>${want}%</strong> in the class.`;
+      }
+    }
+
+    function openCalcModal() {
+      calcEdits = {};
+      calcFinalCurrentTouched = false;
+      calcFinalWant.value = '';
+      calcFinalWeight.value = 20;
+      document.getElementById('calcCourseName').textContent = course.name;
+      renderCalcCategories();
+      recomputeCalc();
+      openModal(calcModal);
+    }
+    document.getElementById('openCalcBtn').addEventListener('click', openCalcModal);
+    document.getElementById('calcCloseBtn').addEventListener('click', () => closeModal(calcModal));
+
+    calcCategories.addEventListener('input', e => {
+      const input = e.target.closest('.calc-input');
+      if (!input) return;
+      const key = input.dataset.key;
+      // No upper clamp (2026-09-01, per Martin: some teachers give extra
+      // credit, so a hypothetical score can legitimately exceed the
+      // assignment's own point value) — only floor at 0, since a
+      // negative score isn't meaningful here.
+      let val = input.value;
+      if (val !== '' && Number(val) < 0) { val = '0'; input.value = val; }
+      calcEdits[key] = val;
+      recomputeCalc();
+    });
+    calcFinalCurrent.addEventListener('input', () => { calcFinalCurrentTouched = true; updateFinalAnswer(); });
+    calcFinalWant.addEventListener('input', updateFinalAnswer);
+    calcFinalWeight.addEventListener('input', updateFinalAnswer);
+    calcResetBtn.addEventListener('click', () => {
+      calcEdits = {};
+      calcFinalCurrentTouched = false;
+      calcFinalWant.value = '';
+      calcFinalWeight.value = 20;
+      renderCalcCategories();
+      recomputeCalc();
+    });
+
+    // Nav — Home/Courses/Assignments/Grades are real pages now; Calendar/
+    // Messages/Settings stay visual-only placeholders, same convention
+    // used everywhere else in the app. Courses is marked active (not
+    // Grades) since this page is reached via Courses → Course Hub →
+    // Gradebook, the same "parent section" pattern course-materials.html
+    // already uses for its own bottom nav.
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as every other page.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>

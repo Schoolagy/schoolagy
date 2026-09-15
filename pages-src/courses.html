@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Courses</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from home.html so
+     this page reads as the same app, not a reskin. See
+     architecture-decisions.md for the note about promoting this to an
+     actual shared stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    /* Neutral black instead of a baked-in accent gradient here —
+       2026-09-11, per Martin. This is only ever visible for a split
+       second on reload/navigation, before applyStoredTheme() (or this
+       page's own appearance-reading script) sets the user's actual
+       saved background over it. The old default was the sample
+       red-orange gradient baked into this file, which read as a real
+       glitch flashing in between pages; a neutral black reads as
+       "still loading" instead, and matches the app's own Black
+       preset (#0c0c0e) so it's not a color that appears nowhere else
+       in the app. */
+    background-color: #0c0c0e;
+    background-image: none;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 100px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 980px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- .card grows to
+      its natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 2px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- One card, same as every other page ---------- */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+  }
+  .card-inner {
+    padding: 22px 24px 8px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .section-head h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  .section-head .course-total {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-faint);
+  }
+
+  .section-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+  /* Reorder button — accent-colored, sits right next to the "All
+     Courses" heading rather than tucked into a separate editor (this
+     page has nothing else to edit yet). Toggles the whole table into a
+     drag-and-drop reorder mode; see JS. */
+  .reorder-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px 6px 12px;
+    font-weight: 800;
+    font-size: 0.72rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .reorder-btn svg { width: 13px; height: 13px; stroke: #fff; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .reorder-btn:hover { background: var(--accent-dark); }
+  .reorder-btn.active { background: var(--accent-dark); }
+
+  /* Reorder mode — a drag handle (same 6-dot control home.html's course
+     editor uses, so the two "drag a course" affordances match) appears
+     in the first cell of each row. Hit-testing while dragging uses raw
+     cursor-Y geometry rather than e.target, since rows mid-drag are
+     slid out of their own layout box via transform — the same lesson
+     learned building home.html's course reorder list. */
+  .course-drag-handle {
+    display: grid;
+    grid-template-columns: repeat(2, 4px);
+    grid-template-rows: repeat(3, 4px);
+    gap: 3px;
+    width: 16px;
+    height: 20px;
+    flex-shrink: 0;
+    align-content: center;
+    justify-content: center;
+    cursor: grab;
+    border-radius: 4px;
+    margin-top: 6px;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .course-drag-handle span { width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint); }
+  .course-drag-handle:hover span,
+  .course-drag-handle:focus-visible span { background: var(--text-muted); }
+  .course-drag-handle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .course-drag-handle:active { cursor: grabbing; }
+
+  table.courses-table.reorder-mode tbody tr { cursor: default; }
+  table.courses-table tbody tr.dragging-row { opacity: 0; }
+
+  /* ---------- Courses table ---------- */
+  table.courses-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 14px;
+  }
+  table.courses-table thead th {
+    text-align: left;
+    font-size: 0.66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+    padding: 0 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.courses-table thead th:not(:first-child) { text-align: center; }
+  table.courses-table tbody td {
+    padding: 13px 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-dark);
+    vertical-align: middle;
+  }
+  table.courses-table tbody tr:last-child td { border-bottom: none; }
+  table.courses-table tbody td:not(:first-child) { text-align: center; }
+  table.courses-table tbody tr {
+    cursor: pointer;
+  }
+  table.courses-table tbody tr:hover td { background: var(--panel-inner); }
+  table.courses-table tbody tr:hover td:first-child { border-top-left-radius: var(--window-radius-sm); border-bottom-left-radius: var(--window-radius-sm); }
+  table.courses-table tbody tr:hover td:last-child { border-top-right-radius: var(--window-radius-sm); border-bottom-right-radius: var(--window-radius-sm); }
+
+  /* Class column: colored tick, full name + course-ID code on one line,
+     a smaller "Pd:{N} Teacher - Section" line underneath — matches the
+     Schoology reference Martin shared, so this reads as sourced from
+     real PowerSchool/Schoology data rather than a generic list. */
+  .course-row { display: flex; align-items: flex-start; gap: 10px; }
+  .course-tick { width: 4px; align-self: stretch; min-height: 34px; border-radius: 999px; flex-shrink: 0; margin-top: 1px; }
+  .course-row-text { min-width: 0; }
+  .course-row-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+  .course-row-name { font-weight: 700; font-size: 0.86rem; color: var(--text-dark); }
+  .course-row-code { font-weight: 700; font-size: 0.7rem; color: var(--text-faint); letter-spacing: 0.01em; }
+  .course-row-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .course-row-meta svg { width: 11px; height: 11px; flex-shrink: 0; color: var(--text-faint); }
+
+  .grade-val { font-weight: 800; font-size: 0.9rem; }
+  .grade-val.good { color: var(--grade-good); }
+  .grade-val.mid { color: var(--grade-mid); }
+  .grade-val.bad { color: var(--grade-bad); }
+  .grade-pct { display: block; font-weight: 600; font-size: 0.68rem; color: var(--text-faint); margin-top: 1px; }
+
+  .trend { display: inline-flex; align-items: center; justify-content: center; gap: 3px; font-weight: 700; font-size: 0.82rem; color: var(--text-muted); border-radius: 6px; padding: 3px 7px; }
+  .trend .arrow { display: inline-flex; align-items: center; justify-content: center; width: 13px; font-weight: 800; font-size: 0.95rem; transform: translateY(1px); }
+  .trend.up { background: rgba(47, 125, 84, 0.14); }
+  .trend.down { background: rgba(182, 67, 47, 0.14); }
+  .trend.flat { background: rgba(131, 132, 154, 0.14); }
+  .trend.up .arrow { color: var(--grade-good); }
+  .trend.down .arrow { color: var(--grade-bad); }
+  .trend.flat .arrow { color: var(--text-faint); transform: translateY(-3px); }
+  .trend .grade-pct { display: inline; margin-top: 0; margin-left: 2px; }
+
+  /* Predicted-grade cell doubles as a hover/focus target for the same
+     reasoning popup home.html's Grades table has — ported over per
+     Martin's request rather than reinvented. The chip is already
+     tinted unconditionally on this page (unlike home.html, where the
+     tint only appears once has-popup is added), so this just adds the
+     interactive affordance on top. */
+  .trend.has-popup { cursor: help; }
+  .trend.has-popup:hover,
+  .trend.has-popup:focus-visible { filter: brightness(0.94); }
+  .trend.has-popup:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-ring);
+  }
+
+  /* ---------- Predicted-grade reasoning popup — copied verbatim from
+     home.html's .grade-popup so hovering Predicted here looks and
+     behaves identically. ---------- */
+  .grade-popup {
+    position: fixed;
+    z-index: 50;
+    width: 272px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 22px 48px -16px rgba(0,0,0,0.5);
+    padding: 14px 16px 10px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    pointer-events: none;
+  }
+  .grade-popup.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .grade-popup h3 {
+    margin: 0 0 2px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: var(--text-dark);
+  }
+  .grade-popup .popup-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+    line-height: 1.4;
+  }
+  .grade-popup .popup-sub strong { color: var(--text-dark); }
+  .grade-popup svg { display: block; overflow: visible; }
+  .grade-popup .popup-foot {
+    font-size: 0.62rem;
+    color: var(--text-faint);
+    margin: 6px 0 0;
+    text-align: right;
+    font-style: italic;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .grade-popup { transition: none; }
+  }
+
+  .updated { color: var(--text-faint); font-size: 0.76rem; white-space: nowrap; }
+
+  /* Assignments column — a quick-glance status rather than a full list:
+     an overdue badge/count when something's late, next-due otherwise,
+     or a quiet "All caught up" when there's nothing pending. */
+  .assign-status { font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+  .assign-status.overdue { color: var(--grade-bad); }
+  .assign-status.upcoming { color: var(--text-dark); }
+  .assign-status.upcoming .assign-status-due { display: block; font-weight: 600; font-size: 0.68rem; color: var(--text-faint); margin-top: 1px; }
+  .assign-status.none { color: var(--text-faint); font-weight: 600; font-style: italic; }
+
+  .assign-cell { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Expand chevron — only shown once a course has more than one
+     assignment (see courseAssignments() in JS). Clicking it opens an
+     inline detail row right below that course listing every assignment,
+     which pushes every row after it down the page as it grows — a plain
+     max-height transition on the wrap div, not a table height hack. */
+  .assign-expand-btn {
+    background: none;
+    border: none;
+    padding: 3px;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    cursor: pointer;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .assign-expand-btn:hover { color: var(--text-muted); background: var(--panel-inner); }
+  .assign-expand-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .assign-expand-btn svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 150ms ease;
+  }
+  /* Plus rotates 45° into an × when expanded — reads as "close" without
+     needing a second icon. */
+  .assign-expand-btn.expanded svg { transform: rotate(45deg); }
+
+  /* The detail row's own <tr>/<td> carry zero padding and no border of
+     their own — every bit of visible space (and the separator line
+     below the list) lives on .assign-detail-inner instead, INSIDE the
+     max-height:0/overflow:hidden wrap. That way a collapsed row is
+     genuinely zero-height (no stray gap or hairline sitting between two
+     course rows until you actually expand one), rather than a border
+     that's merely invisible-looking because its content is empty. */
+  table.courses-table tbody tr.assign-detail-row { cursor: default; }
+  /* border-bottom: none here matters as much as the padding reset above —
+     without it this cell still inherits the generic `tbody td` border
+     below, which sits right underneath .assign-detail-inner's own
+     border-bottom once expanded and reads as one thicker/doubled line. */
+  table.courses-table tbody tr.assign-detail-row td { padding: 0 8px; border-bottom: none; }
+  .assign-detail-wrap { max-height: 0; overflow: hidden; }
+  .assign-detail-inner {
+    padding: 12px 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.courses-table tbody tr.assign-detail-row:last-child .assign-detail-inner { border-bottom: none; }
+  /* Each assignment reads as its own clickable row rather than a
+     permanently-shaded chip — no background until you actually hover
+     or focus it, at which point it highlights in the accent color (not
+     the neutral panel gray every other "selected" state on this page
+     uses), so only the one item you're pointing at stands out. */
+  .assign-detail-item {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: var(--window-radius-sm);
+    cursor: pointer;
+    transition: background 120ms ease;
+  }
+  .assign-detail-tick { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--text-faint); transition: background 120ms ease; }
+  .assign-detail-item.overdue .assign-detail-tick { background: var(--grade-bad); }
+  .assign-detail-title { font-weight: 700; font-size: 0.8rem; color: var(--text-dark); flex: 1; min-width: 0; transition: color 120ms ease; }
+  .assign-detail-due { font-size: 0.72rem; font-weight: 700; color: var(--text-muted); white-space: nowrap; transition: color 120ms ease; }
+  .assign-detail-item.overdue .assign-detail-due { color: var(--grade-bad); }
+  .assign-detail-item:hover,
+  .assign-detail-item:focus-visible {
+    background: var(--accent);
+  }
+  .assign-detail-item:hover .assign-detail-tick,
+  .assign-detail-item:focus-visible .assign-detail-tick {
+    background: #fff;
+  }
+  .assign-detail-item:hover .assign-detail-title,
+  .assign-detail-item:focus-visible .assign-detail-title,
+  .assign-detail-item:hover .assign-detail-due,
+  .assign-detail-item:focus-visible .assign-detail-due {
+    color: #fff;
+  }
+  .assign-detail-item:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  @media (max-width: 720px) {
+    table.courses-table thead th:nth-child(5),
+    table.courses-table tbody td:nth-child(5) { display: none; }
+  }
+  @media (max-width: 560px) {
+    table.courses-table thead { display: none; }
+    table.courses-table, table.courses-table tbody, table.courses-table tbody tr, table.courses-table tbody td { display: block; width: 100%; }
+    table.courses-table tbody tr { padding: 10px 4px; border-bottom: 1px solid var(--border); }
+    table.courses-table tbody td { border-bottom: none; padding: 4px 4px; text-align: left !important; }
+    table.courses-table tbody tr:last-child { border-bottom: none; }
+    .grade-val, .trend, .assign-status { display: inline-flex; }
+    .grade-val .grade-pct { display: inline; margin: 0 0 0 4px; }
+    table.courses-table tbody td:nth-child(2)::before { content: 'Grade: '; font-size: 0.7rem; font-weight: 700; color: var(--text-faint); }
+    table.courses-table tbody td:nth-child(3)::before { content: 'Predicted: '; font-size: 0.7rem; font-weight: 700; color: var(--text-faint); }
+    table.courses-table tbody td:nth-child(4)::before { content: 'Assignments: '; font-size: 0.7rem; font-weight: 700; color: var(--text-faint); }
+    /* Override the generic row padding/border above for the detail
+       row specifically — same reasoning as the desktop rule: a
+       collapsed row should take up no visible space at all, not just
+       have empty content inside a still-padded, still-bordered box. */
+    table.courses-table tbody tr.assign-detail-row { padding: 0; border-bottom: none; }
+    table.courses-table tbody tr.assign-detail-row td { padding: 0; }
+  }
+
+  /* ---------- Bottom nav ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+  @media (max-width: 520px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Courses</h1>
+        <p class="subtitle" id="courseCountSub">6 classes</p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-inner">
+        <div class="section-head">
+          <div class="section-head-left">
+            <h2>All Courses</h2>
+            <button class="reorder-btn" id="reorderBtn" type="button" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/><path d="M12 3v18"/></svg>
+              <span id="reorderBtnLabel">Reorder</span>
+            </button>
+          </div>
+          <span class="course-total" id="courseTotal"></span>
+        </div>
+        <table class="courses-table">
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Grade</th>
+              <th>Predicted</th>
+              <th>Assignments</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody id="coursesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grade-popup" id="gradePopup" role="tooltip"></div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner" id="dock">
+      <button class="nav-link" type="button" data-page="home" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-page="courses">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
+    // Sample data — same six courses as home.html's COURSES array (same
+    // id/name/color/grade/predicted/updated values) plus two fields Home
+    // doesn't need but this list page's draft called for: a PowerSchool/
+    // Schoology-style course code and a period/teacher/section line
+    // (format lifted from the Schoology screenshot Martin shared:
+    // "76_[Letter][4 digits]" for the code, "Pd:{N} Teacher - Section"
+    // underneath). Teacher names for apchem/english10/pe match the
+    // Messages widget's senders in home.html for consistency; the other
+    // three are new (Martin said "add anything you want").
+    //
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Same
+    // schoolagy_course_custom (per-course name/color overrides, keyed by
+    // course id, only actually-customized courses present) and
+    // schoolagy_course_order (full custom ordering of course ids) keys
+    // home.html's Customize editor uses — see that file for the fuller
+    // note. This page's own Reorder tool below is the other place that
+    // WRITES schoolagy_course_order (it has no rename/color UI of its
+    // own, so it never writes schoolagy_course_custom); every other page
+    // only reads both. applyCourseCustomizationsInPlace() is called right
+    // after the raw array literal, mutating COURSES in place, so it's
+    // already customized/reordered before anything renders it, and the
+    // reorder tool's existing in-place COURSES.splice() calls need no
+    // other change. Same
+    // defensive try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in
+    // settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function saveCourseOrder(ids) {
+      try { localStorage.setItem(SCHOOLAGY_COURSE_ORDER_KEY, JSON.stringify(ids)); } catch {}
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
+    const COURSES = [
+      { id: 'apchem', name: 'AP Chemistry', code: '76_M0431', period: 2, teacher: 'Alvarez', section: '1204', color: '#a67a22', grade: 'B+', pct: 87, predicted: 'A-', predictedPct: 91, trend: 'up', updated: '2h ago' },
+      { id: 'algebra2', name: 'Algebra II', code: '76_S0512', period: 3, teacher: 'Whitfield', section: '1188', color: '#5b6ea3', grade: 'A', pct: 95, predicted: 'A', predictedPct: 95, trend: 'flat', updated: '1d ago' },
+      { id: 'english10', name: 'English 10', code: '76_F0288', period: 4, teacher: 'Cho', section: '1350', color: '#6b8f5e', grade: 'C+', pct: 78, predicted: 'C', predictedPct: 74, trend: 'down', updated: '3h ago' },
+      { id: 'ushistory', name: 'U.S. History', code: '76_R0367', period: 1, teacher: 'Bennett', section: '1092', color: '#a15c4f', grade: 'A-', pct: 91, predicted: 'A-', predictedPct: 91, trend: 'flat', updated: '5h ago' },
+      { id: 'spanish3', name: 'Spanish III', code: '76_G0295', period: 5, teacher: 'Ortiz', section: '1417', color: '#8a6ba1', grade: 'B', pct: 84, predicted: 'B+', predictedPct: 88, trend: 'up', updated: '1d ago' },
+      { id: 'pe', name: 'PE', code: '76_P0300', period: 6, teacher: 'Reyes', section: '1125', color: '#4f8c8a', grade: 'A', pct: 97, predicted: 'A', predictedPct: 97, trend: 'flat', updated: '2d ago' },
+    ];
+    applyCourseCustomizationsInPlace(COURSES);
+
+    function findCourse(id) { return COURSES.find(c => c.id === id); }
+
+    // Escapes a value for interpolation into an HTML string — safe both in
+    // text positions and inside quoted attribute values. Every `${...}`
+    // below carrying course or assignment data must go through it: in the
+    // live app those strings come from teachers, so rendered raw into
+    // innerHTML a course named `<img src=x onerror=...>` executes in our
+    // own origin. Same helper as home.html — see its comment for the full
+    // reasoning. Do NOT wrap values that are themselves markup (the chart
+    // fragments, BOOK_ICON/EXPAND_ICON, assignStatus).
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+      ));
+    }
+
+    // Assignment-score history behind the Predicted-grade reasoning
+    // popup below — copied verbatim from home.html's HISTORY (same
+    // course ids, same predictedPct/trend values, so the chart's last
+    // graded point and its predicted point stay consistent with this
+    // page's own COURSES data).
+    const HISTORY = {
+      apchem: { points: [72, 79, 84, 88, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      algebra2: { points: [94, 96, 93, 97, 95], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      english10: { points: [88, 82, 79, 76, 73], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      ushistory: { points: [89, 93, 88, 92, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'] },
+      spanish3: { points: [76, 80, 83, 85, 87], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'] },
+      pe: { points: [96, 98, 95, 97, 96], dates: ['Aug 2', 'Aug 6', 'Aug 10', 'Aug 16', 'Aug 22'] },
+    };
+
+    // Same OVERDUE/UPCOMING shape as home.html, trimmed to what the
+    // Assignments column needs: whether a course has anything overdue,
+    // and if not, what's coming up next.
+    const OVERDUE = [
+      { title: 'Lab Report #4', courseId: 'apchem', due: 'Fri Aug 21' },
+      { title: 'Chapter 6 Discussion', courseId: 'english10', due: 'Thu Aug 20' },
+      { title: 'Reading Response', courseId: 'ushistory', due: 'Wed Aug 19' },
+    ];
+    const UPCOMING = [
+      { title: 'Unit 2 Quiz', courseId: 'algebra2', due: 'Mon Aug 24' },
+      { title: 'Vocab Worksheet', courseId: 'spanish3', due: 'Tue Aug 25' },
+      { title: 'Problem Set 7', courseId: 'algebra2', due: 'Wed Aug 26' },
+      // AP Chemistry already has an Overdue item below — giving it one
+      // Upcoming item too means its expanded assignment list shows both
+      // states side by side (red "Overdue" tick + neutral "Due" tick),
+      // rather than Algebra II's chevron being the only example and it
+      // only ever showing the single-type (all-Upcoming) case.
+      { title: 'Titration Lab Prep', courseId: 'apchem', due: 'Mon Aug 24' },
+    ];
+
+    function gradeBand(letter) {
+      if (letter.startsWith('A')) return 'good';
+      if (letter.startsWith('B')) return 'mid';
+      if (letter.startsWith('C')) return 'mid';
+      return 'bad';
+    }
+    const TREND_ARROW = { up: '↗', down: '↘', flat: '–' };
+
+    const BOOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>';
+
+    // Assignments column: an overdue badge takes priority (matches the
+    // urgency the Home page already gives Overdue items), otherwise the
+    // next upcoming item, otherwise a quiet "All caught up."
+    function assignStatus(courseId) {
+      const overdue = OVERDUE.filter(o => o.courseId === courseId);
+      if (overdue.length) {
+        return `<span class="assign-status overdue">${overdue.length} overdue</span>`;
+      }
+      const upcoming = UPCOMING.filter(u => u.courseId === courseId);
+      if (upcoming.length) {
+        return `<span class="assign-status upcoming">${escapeHtml(upcoming[0].title)}<span class="assign-status-due">Due ${escapeHtml(upcoming[0].due)}</span></span>`;
+      }
+      return `<span class="assign-status none">All caught up</span>`;
+    }
+
+    // All of a course's assignments (Overdue first, then Upcoming) —
+    // used to decide whether a row gets an expand chevron and to build
+    // the expanded detail list. Separate from assignStatus() above,
+    // which only ever needs the single most-urgent item for the
+    // collapsed summary.
+    function courseAssignments(courseId) {
+      const overdue = OVERDUE.filter(o => o.courseId === courseId).map(o => ({ ...o, status: 'overdue' }));
+      const upcoming = UPCOMING.filter(u => u.courseId === courseId).map(u => ({ ...u, status: 'upcoming' }));
+      return overdue.concat(upcoming);
+    }
+
+    const EXPAND_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+
+    function assignDetailRowHTML(course, items) {
+      const rows = items.map(item => `
+        <div class="assign-detail-item ${item.status}" tabindex="0" role="button" aria-label="${escapeHtml(item.title)}, ${escapeHtml(item.status === 'overdue' ? 'overdue ' + item.due : 'due ' + item.due)}">
+          <span class="assign-detail-tick"></span>
+          <span class="assign-detail-title">${escapeHtml(item.title)}</span>
+          <span class="assign-detail-due">${escapeHtml(item.status === 'overdue' ? 'Overdue · ' + item.due : 'Due ' + item.due)}</span>
+        </div>
+      `).join('');
+      return `
+        <tr class="assign-detail-row" data-detail-for="${escapeHtml(course.id)}">
+          <td colspan="5">
+            <div class="assign-detail-wrap">
+              <div class="assign-detail-inner">${rows}</div>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    const coursesBody = document.getElementById('coursesBody');
+
+    // Whether the reorder tool (button next to "All Courses") is active
+    // — see the Reorder tool block further down for the drag-and-drop
+    // logic this flag gates.
+    let reorderModeOn = false;
+
+    // Which courses currently have their assignment list expanded (the
+    // down-arrow next to the Assignments cell) — a course only gets the
+    // arrow at all once it has more than one assignment. Suppressed
+    // entirely in reorder mode so the table isn't showing two different
+    // kinds of row-manipulation UI at once.
+    const expandedCourseIds = new Set();
+
+    // ------------------------------------------------------------------
+    // Predicted-grade reasoning popup — ported from home.html's Grades
+    // table verbatim (same HISTORY data, same chart/positioning logic)
+    // so hovering or tab-focusing a Predicted cell here behaves
+    // identically: a small popup with a line chart of the last 5 graded
+    // scores extrapolating into the predicted point, in the course's
+    // own identity color. See home.html for the full design rationale
+    // (dashed projected segment, hollow marker, diagonal-stripe band).
+    // ------------------------------------------------------------------
+    function niceBounds(values) {
+      const min = Math.min(...values), max = Math.max(...values);
+      let lo = Math.floor((min - 6) / 10) * 10;
+      let hi = Math.ceil((max + 6) / 10) * 10;
+      lo = Math.max(0, lo);
+      hi = Math.min(100, hi);
+      if (hi - lo < 20) { hi = Math.min(100, lo + 20); }
+      return [lo, hi];
+    }
+
+    function buildGradeChartSVG(course) {
+      const hist = HISTORY[course.id];
+      const allLabels = hist.dates.concat(['Predicted']);
+      const allValues = hist.points.concat([course.predictedPct]);
+      const [yLo, yHi] = niceBounds(allValues);
+
+      const W = 240, H = 108;
+      const padL = 26, padR = 6, padT = 10, padB = 16;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+
+      const xFor = i => padL + (i / (allLabels.length - 1)) * plotW;
+      const yFor = v => padT + plotH - ((v - yLo) / (yHi - yLo)) * plotH;
+
+      const yTicks = [yLo, Math.round((yLo + yHi) / 2), yHi];
+      const gridlines = yTicks.map(t => `
+        <line x1="${padL}" x2="${W - padR}" y1="${yFor(t)}" y2="${yFor(t)}" stroke="var(--border)" stroke-width="1"/>
+        <text x="${padL - 6}" y="${yFor(t) + 3}" text-anchor="end" font-size="8" fill="var(--text-faint)">${t}%</text>
+      `).join('');
+
+      const actualPts = hist.points.map((v, i) => [xFor(i), yFor(v)]);
+      const actualLine = actualPts.map(p => p.join(',')).join(' ');
+      const actualMarkers = actualPts.map(([x, y]) => `
+        <circle cx="${x}" cy="${y}" r="4" fill="${escapeHtml(course.color)}" stroke="var(--panel-bg)" stroke-width="2"/>
+      `).join('');
+
+      const predX = xFor(allLabels.length - 1), predY = yFor(course.predictedPct);
+      const lastActual = actualPts[actualPts.length - 1];
+
+      const predictedBand = `x="${lastActual[0]}" y="${padT}" width="${predX - lastActual[0]}" height="${plotH}"`;
+      const stripeDefs = `
+        <pattern id="predStripesCourses" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="${escapeHtml(course.color)}" fill-opacity="0.08"/>
+          <line x1="0" y1="0" x2="0" y2="6" stroke="${escapeHtml(course.color)}" stroke-width="2.2"/>
+        </pattern>
+      `;
+
+      const xLabels = allLabels.map((lab, i) => `
+        <text x="${xFor(i)}" y="${H - 2}" text-anchor="middle" font-size="7.5" fill="var(--text-faint)">${escapeHtml(lab === 'Predicted' ? 'Pred.' : lab)}</text>
+      `).join('');
+
+      return `
+        <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Line chart of ${escapeHtml(course.name)} assignment scores trending toward a predicted grade of ${escapeHtml(course.predictedPct)} percent">
+          <defs>${stripeDefs}</defs>
+          ${gridlines}
+          <rect ${predictedBand} fill="url(#predStripesCourses)" stroke="none"/>
+          <polyline points="${actualLine}" fill="none" stroke="${escapeHtml(course.color)}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="${lastActual[0]}" y1="${lastActual[1]}" x2="${predX}" y2="${predY}" stroke="${escapeHtml(course.color)}" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 3"/>
+          ${actualMarkers}
+          <circle cx="${predX}" cy="${predY}" r="4.5" fill="var(--panel-bg)" stroke="${escapeHtml(course.color)}" stroke-width="2"/>
+          <text x="${predX}" y="${predY - 10}" text-anchor="end" font-size="8.5" font-weight="800" fill="var(--text-dark)">${escapeHtml(course.predictedPct)}%</text>
+          ${xLabels}
+        </svg>
+      `;
+    }
+
+    const TREND_WORD = { up: 'Trending up', down: 'Trending down', flat: 'Holding steady' };
+
+    function renderGradePopup(course) {
+      const hist = HISTORY[course.id];
+      const first = hist.points[0], lastGraded = hist.points[hist.points.length - 1];
+      return `
+        <h3>${escapeHtml(course.name)}</h3>
+        <p class="popup-sub">${TREND_WORD[course.trend]}: <strong>${escapeHtml(first)}% → ${escapeHtml(lastGraded)}%</strong> over the last ${hist.points.length} graded assignments, predicting <strong>${escapeHtml(course.predictedPct)}%</strong> (${escapeHtml(course.predicted)}).</p>
+        ${buildGradeChartSVG(course)}
+        <p class="popup-foot">Predicted grade extrapolates this trend — not a copy of the current grade.</p>
+      `;
+    }
+
+    const gradePopup = document.getElementById('gradePopup');
+    let popupHideTimer = null;
+
+    function showGradePopup(trigger) {
+      clearTimeout(popupHideTimer);
+      const course = findCourse(trigger.dataset.course);
+      if (!course || !HISTORY[course.id]) return;
+      gradePopup.innerHTML = renderGradePopup(course);
+      gradePopup.classList.add('show');
+      trigger.setAttribute('aria-expanded', 'true');
+
+      const rect = trigger.getBoundingClientRect();
+      const popupRect = gradePopup.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - popupRect.width / 2;
+      left = Math.max(10, Math.min(left, window.innerWidth - popupRect.width - 10));
+      let top = rect.top - popupRect.height - 10;
+      if (top < 10) top = rect.bottom + 10;
+      gradePopup.style.left = `${left}px`;
+      gradePopup.style.top = `${top}px`;
+    }
+
+    function hideGradePopup() {
+      gradePopup.classList.remove('show');
+      document.querySelectorAll('.trend.has-popup[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+    }
+
+    function bindGradePopupTriggers() {
+      document.querySelectorAll('.trend.has-popup').forEach(trigger => {
+        trigger.addEventListener('mouseenter', () => showGradePopup(trigger));
+        trigger.addEventListener('focus', () => showGradePopup(trigger));
+        trigger.addEventListener('mouseleave', () => { popupHideTimer = setTimeout(hideGradePopup, 80); });
+        trigger.addEventListener('blur', hideGradePopup);
+        trigger.addEventListener('keydown', e => { if (e.key === 'Escape') { hideGradePopup(); trigger.blur(); } });
+      });
+    }
+
+    function renderCoursesTable() {
+      coursesBody.innerHTML = '';
+      COURSES.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.dataset.id = c.id;
+        if (!reorderModeOn) {
+          tr.tabIndex = 0;
+          tr.setAttribute('role', 'link');
+          tr.setAttribute('aria-label', `Open ${c.name}`);
+        }
+        const items = courseAssignments(c.id);
+        const expandable = items.length > 1 && !reorderModeOn;
+        const isExpanded = expandable && expandedCourseIds.has(c.id);
+        tr.innerHTML = `
+          <td>
+            <div class="course-row">
+              ${reorderModeOn ? `<span class="course-drag-handle" tabindex="0" role="button" aria-label="Drag to reorder ${escapeHtml(c.name)}, or focus and use arrow keys"><span></span><span></span><span></span><span></span><span></span><span></span></span>` : ''}
+              <span class="course-tick" style="background:${escapeHtml(c.color)}"></span>
+              <div class="course-row-text">
+                <div class="course-row-top">
+                  <span class="course-row-name">${escapeHtml(c.name)}</span>
+                  <span class="course-row-code">${escapeHtml(c.code)}</span>
+                </div>
+                <div class="course-row-meta">${BOOK_ICON}Pd:${escapeHtml(c.period)} ${escapeHtml(c.teacher)} - ${escapeHtml(c.section)}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="grade-val ${gradeBand(c.grade)}">${escapeHtml(c.grade)}<span class="grade-pct">${escapeHtml(c.pct)}%</span></span></td>
+          <td><span class="trend has-popup ${escapeHtml(c.trend)}" tabindex="0" role="button" aria-haspopup="true" aria-label="Why is ${escapeHtml(c.name)} predicted ${escapeHtml(c.predicted)}, ${escapeHtml(c.predictedPct)} percent? Show reasoning." data-course="${escapeHtml(c.id)}"><span class="arrow">${TREND_ARROW[c.trend]}</span>${escapeHtml(c.predicted)}<span class="grade-pct">(${escapeHtml(c.predictedPct)}%)</span></span></td>
+          <td>
+            <div class="assign-cell">
+              ${assignStatus(c.id)}
+              ${expandable ? `<button class="assign-expand-btn${isExpanded ? ' expanded' : ''}" type="button" data-course="${escapeHtml(c.id)}" aria-expanded="${isExpanded}" aria-label="${isExpanded ? 'Hide' : 'Show'} all assignments for ${escapeHtml(c.name)}">${EXPAND_ICON}</button>` : ''}
+            </div>
+          </td>
+          <td class="updated">${escapeHtml(c.updated)}</td>
+        `;
+        coursesBody.appendChild(tr);
+        if (expandable) {
+          coursesBody.insertAdjacentHTML('beforeend', assignDetailRowHTML(c, items));
+          if (isExpanded) {
+            // Land already-open rows at their real height with no
+            // transition — only a fresh click (see the click handler
+            // below) animates the open/close.
+            const wrap = coursesBody.lastElementChild.querySelector('.assign-detail-wrap');
+            wrap.style.transition = 'none';
+            wrap.style.maxHeight = wrap.scrollHeight + 'px';
+          }
+        }
+      });
+      document.getElementById('courseTotal').textContent = `${COURSES.length} total`;
+      document.getElementById('courseCountSub').textContent = `${COURSES.length} classes`;
+      if (reorderModeOn) bindCourseDragHandles();
+      bindGradePopupTriggers();
+    }
+    renderCoursesTable();
+
+    // Expand/collapse a course's assignment list — animates the detail
+    // row's height (so it visibly "bumps down" every row below it)
+    // rather than snapping, via a plain max-height transition on the
+    // wrapper div; no full table re-render needed for the toggle itself,
+    // so both the open and close directions get to animate.
+    coursesBody.addEventListener('click', e => {
+      const btn = e.target.closest('.assign-expand-btn');
+      if (!btn) return;
+      const courseId = btn.dataset.course;
+      const detailRow = coursesBody.querySelector(`.assign-detail-row[data-detail-for="${courseId}"]`);
+      if (!detailRow) return;
+      const wrap = detailRow.querySelector('.assign-detail-wrap');
+      const opening = !btn.classList.contains('expanded');
+      btn.classList.toggle('expanded', opening);
+      btn.setAttribute('aria-expanded', String(opening));
+      btn.setAttribute('aria-label', `${opening ? 'Hide' : 'Show'} all assignments for ${COURSES.find(c => c.id === courseId).name}`);
+      wrap.style.transition = 'max-height 220ms ease';
+      if (opening) {
+        expandedCourseIds.add(courseId);
+        wrap.style.maxHeight = wrap.scrollHeight + 'px';
+      } else {
+        expandedCourseIds.delete(courseId);
+        // Set an explicit starting height (it's currently `auto` via
+        // scrollHeight from the open state) so the transition to 0 has
+        // something to animate from — animating straight from `auto`
+        // is a no-op in CSS.
+        wrap.style.maxHeight = wrap.scrollHeight + 'px';
+        requestAnimationFrame(() => { wrap.style.maxHeight = '0px'; });
+      }
+    });
+
+    // Row click/Enter → open that course's own Hub page (course-home.html
+    // per site-map.md's /courses/{course_id} route). Suppressed while a
+    // row is in reorder mode (no role="link" then, see renderCoursesTable),
+    // and ignored when the click actually landed on one of the row's own
+    // interactive children (the drag handle, the Predicted popup trigger,
+    // the expand button, or an expanded assignment item) so those keep
+    // their own behavior instead of also navigating away.
+    function courseRowNavTarget(el) {
+      if (el.closest('.course-drag-handle') || el.closest('.trend') || el.closest('.assign-expand-btn') || el.closest('.assign-detail-item')) return null;
+      const row = el.closest('tr[data-id]');
+      return (row && !reorderModeOn) ? row.dataset.id : null;
+    }
+    coursesBody.addEventListener('click', e => {
+      const id = courseRowNavTarget(e.target);
+      if (id) window.location.href = `course-home.html?course=${id}`;
+    });
+    coursesBody.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const id = courseRowNavTarget(e.target);
+      if (!id) return;
+      e.preventDefault();
+      window.location.href = `course-home.html?course=${id}`;
+    });
+
+    // ------------------------------------------------------------------
+    // Reorder tool — the accent "Reorder" button next to the "All
+    // Courses" heading. Same interaction language as home.html's course
+    // editor list: a 6-dot drag handle per row, a live preview that
+    // slides sibling rows out of the way as you drag over them, and a
+    // short FLIP animation settling the final order on release.
+    // ArrowUp/ArrowDown on a focused handle is the keyboard equivalent.
+    //
+    // Built on Pointer Events (pointerdown/pointermove/pointerup)
+    // rather than the native HTML5 Drag and Drop API. That's a change
+    // from home.html's course-editor list, made after this exact
+    // implementation regressed here: native DnD's `drop` event turned
+    // out to be unreliable in this environment — dragover kept firing
+    // with correct geometry right up to release, but `dragend` fired
+    // WITHOUT a preceding `drop` (confirmed via an event-logging
+    // instrumented run), so the reorder never committed and the row
+    // visually snapped back — exactly the "resets to default" symptom
+    // reported. Native DnD is also mouse-only: it has no touch mapping
+    // at all, so it wouldn't work via touch on a phone/tablet either,
+    // which matters a lot for a mockup of an iOS app. Pointer Events
+    // unify mouse, touch, and pen into one API and don't have either
+    // problem, so the whole gesture was rebuilt on them instead of
+    // patched further. (home.html's course-editor list still uses
+    // native DnD and hasn't been touched — worth migrating it the same
+    // way if it turns out to have the same issue.)
+    // ------------------------------------------------------------------
+    const reorderBtn = document.getElementById('reorderBtn');
+    const reorderBtnLabel = document.getElementById('reorderBtnLabel');
+    const coursesTableEl = document.querySelector('table.courses-table');
+
+    let draggedIdx = null;
+    let previewIdx = null;
+    let dragRowHeight = 0;
+    let listTopAtStart = 0;
+    let activePointerId = null;
+
+    function indexAtY(clientY) {
+      if (!dragRowHeight) return draggedIdx;
+      const idx = Math.round((clientY - listTopAtStart) / dragRowHeight);
+      return Math.max(0, Math.min(COURSES.length - 1, idx));
+    }
+    function previewOrder(targetIdx) {
+      if (targetIdx === previewIdx) return;
+      previewIdx = targetIdx;
+      const rh = dragRowHeight;
+      [...coursesBody.children].forEach((row, idx) => {
+        if (idx === draggedIdx) return;
+        let shift = 0;
+        if (draggedIdx < targetIdx && idx > draggedIdx && idx <= targetIdx) shift = -rh;
+        else if (draggedIdx > targetIdx && idx < draggedIdx && idx >= targetIdx) shift = rh;
+        row.style.transition = 'transform 150ms ease';
+        row.style.transform = shift ? `translateY(${shift}px)` : '';
+      });
+    }
+    function clearPreview() {
+      [...coursesBody.children].forEach(row => { row.style.transition = ''; row.style.transform = ''; });
+      previewIdx = null;
+    }
+
+    function startCourseDrag(e) {
+      const handle = e.target.closest('.course-drag-handle');
+      if (!reorderModeOn || !handle) return;
+      // Ignore a second, incidental pointer landing mid-drag — e.g. a
+      // thumb resting on a touchscreen while the other hand drags. Without
+      // this guard, a second pointerdown overwrites draggedIdx/
+      // activePointerId out from under the drag already in progress, so
+      // when the FIRST pointer's pointerup finally arrives its pointerId
+      // no longer matches and its cleanup never runs: the dragged row is
+      // left permanently opacity:0 ("dragging-row") — a blank row still
+      // taking up its normal height. Only one drag gesture is tracked at
+      // a time; every other pointer is a no-op until it ends.
+      if (draggedIdx !== null) return;
+      const row = handle.closest('tr');
+      if (!row) return;
+      e.preventDefault();
+      activePointerId = e.pointerId;
+      handle.setPointerCapture(activePointerId);
+      draggedIdx = [...coursesBody.children].indexOf(row);
+      row.classList.add('dragging-row');
+      const rows = coursesBody.querySelectorAll('tr');
+      dragRowHeight = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : 0;
+      listTopAtStart = rows[0].getBoundingClientRect().top;
+      handle.addEventListener('pointermove', onCourseDragMove);
+      handle.addEventListener('pointerup', onCourseDragEnd);
+      handle.addEventListener('pointercancel', onCourseDragEnd);
+    }
+    function onCourseDragMove(e) {
+      if (draggedIdx === null || e.pointerId !== activePointerId) return;
+      previewOrder(indexAtY(e.clientY));
+    }
+    function onCourseDragEnd(e) {
+      if (draggedIdx === null || e.pointerId !== activePointerId) return;
+      const overIdx = previewIdx !== null ? previewIdx : indexAtY(e.clientY);
+      if (overIdx !== draggedIdx) {
+        // FLIP: capture every row's current position (keyed by course id,
+        // not index, since index is about to change), rebuild the table
+        // in the new order, then transform each row from its old spot
+        // back to 0 so the reorder always visibly animates rather than
+        // snapping — the preview above already slid everything close to
+        // its landing spot, so this reads as the tail end of one motion.
+        const firstRects = {};
+        [...coursesBody.children].forEach(row => { firstRects[row.dataset.id] = row.getBoundingClientRect(); });
+        const [moved] = COURSES.splice(draggedIdx, 1);
+        COURSES.splice(overIdx, 0, moved);
+        saveCourseOrder(COURSES.map(c => c.id));
+        renderCoursesTable();
+        [...coursesBody.children].forEach(row => {
+          const first = firstRects[row.dataset.id];
+          if (!first) return;
+          const last = row.getBoundingClientRect();
+          const dy = first.top - last.top;
+          if (Math.abs(dy) > 0.5) {
+            row.style.transition = 'none';
+            row.style.transform = `translateY(${dy}px)`;
+            requestAnimationFrame(() => {
+              row.style.transition = 'transform 200ms ease';
+              row.style.transform = '';
+            });
+          }
+        });
+      } else {
+        coursesBody.querySelectorAll('tr.dragging-row').forEach(r => r.classList.remove('dragging-row'));
+      }
+      const handle = e.target.closest ? e.target.closest('.course-drag-handle') : null;
+      (handle || e.currentTarget)?.removeEventListener?.('pointermove', onCourseDragMove);
+      (handle || e.currentTarget)?.removeEventListener?.('pointerup', onCourseDragEnd);
+      (handle || e.currentTarget)?.removeEventListener?.('pointercancel', onCourseDragEnd);
+      draggedIdx = null;
+      activePointerId = null;
+      clearPreview();
+    }
+    coursesBody.addEventListener('pointerdown', startCourseDrag);
+
+    function bindCourseDragHandles() {
+      coursesBody.querySelectorAll('.course-drag-handle').forEach(handle => {
+        handle.addEventListener('keydown', e => {
+          const row = handle.closest('tr');
+          const i = [...coursesBody.children].indexOf(row);
+          let j = null;
+          if (e.key === 'ArrowUp') j = i - 1;
+          else if (e.key === 'ArrowDown') j = i + 1;
+          else return;
+          if (j < 0 || j >= COURSES.length) return;
+          e.preventDefault();
+          [COURSES[i], COURSES[j]] = [COURSES[j], COURSES[i]];
+          saveCourseOrder(COURSES.map(c => c.id));
+          renderCoursesTable();
+          const handles = coursesBody.querySelectorAll('.course-drag-handle');
+          if (handles[j]) handles[j].focus();
+        });
+      });
+    }
+
+    reorderBtn.addEventListener('click', () => {
+      reorderModeOn = !reorderModeOn;
+      reorderBtn.classList.toggle('active', reorderModeOn);
+      reorderBtn.setAttribute('aria-pressed', String(reorderModeOn));
+      reorderBtnLabel.textContent = reorderModeOn ? 'Done' : 'Reorder';
+      coursesTableEl.classList.toggle('reorder-mode', reorderModeOn);
+      renderCoursesTable();
+    });
+
+    // Nav — Home is a real link (this page and home.html both exist now);
+    // the rest stay visual-only placeholders, same convention as Home.
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as home.html.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>
