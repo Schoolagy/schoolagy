@@ -1,524 +1,489 @@
 /**
- * Loading-state placeholders shown while LegacyPage is still "checking"
- * (session + bundle fetch in flight) — see LegacyPage.tsx.
+ * Loading placeholders, injected INTO the real page rather than replacing it.
  *
- * Before 2026-09-09, that phase rendered nothing at all: a deliberate choice
- * to avoid a spinner flashing against each page's own background. The
- * tradeoff was a beat of pure blank space on every navigation. This keeps
- * the same "nothing jarring" property (no spinner, no layout shift once the
- * real content mounts — these shapes approximate where it'll land, they
- * don't reserve exact pixels) while giving the wait something to look at:
- * a page-shaped skeleton, one per route, built from a handful of shared
- * shimmering primitives below.
+ * ── Why this was rewritten (2026-09-16) ──────────────────────────────────
+ * The previous version rendered a hand-drawn stand-in for each whole page:
+ * grey boxes where the header goes, grey boxes where the nav goes, grey boxes
+ * where the table goes. It was explicitly "not a pixel-perfect replica … a
+ * hand-authored approximation of its rough shape," which is exactly the
+ * problem — the approximations drifted from the real pages and, in Martin's
+ * words, were "not accurate at all."
  *
- * These are deliberately NOT pixel-perfect replicas of each page's real
- * markup — they're hand-authored approximations of its rough shape (a
- * table here, a two-pane layout there, a calendar grid on this one). That
- * keeps this file independent of each page's actual CSS classes, which
- * change freely; a skeleton that had to track exact class names would
- * silently drift out of sync with no build-time check to catch it, the way
- * port-pages.mjs's `assertReplaced` catches drift in the real transforms.
+ * This version follows the pattern Martin sent (the Cloudflare dashboard):
+ * the page's real chrome — sidebar, headers, column titles, nav, footer —
+ * appears immediately and for real, and only the slots where DATA will land
+ * get a shimmer. Nothing is redrawn, so nothing can drift out of shape.
  *
- * Pages not listed in SKELETONS below (currently: login, onboarding) fall
- * back to the pre-2026-09-09 blank behavior — a login/wizard screen isn't
- * "loading data" in the same sense the app pages are, so there's nothing
- * useful to sketch the shape of.
+ * The thing that makes this safe: every data container in pages-src ships
+ * EMPTY and is filled by the page's own script (`#gradesBody`, `#threadList`,
+ * `#assignListBody`, …). So rendering the markup early shows real structure
+ * with genuine holes in it — never somebody else's sample grades.
+ *
+ * ── How the specs work ───────────────────────────────────────────────────
+ * Each row template reuses the page's OWN class names. That is deliberate,
+ * and the opposite of the old file's reasoning. Borrowing the real classes
+ * means the skeleton inherits the real padding, borders and row heights, so
+ * the shimmer sits exactly where the content will and nothing jumps when the
+ * data arrives. The old worry — that class names change and the skeleton
+ * drifts silently — is handled two ways now: the failure mode is benign (an
+ * unstyled bar, not a mis-drawn page), and `scripts/verify-pages.mjs` fails
+ * the build if a selector below no longer exists in its page.
  */
 
-const SHIMMER_CSS = `
+export const SKELETON_CSS = `
   @keyframes schoolagySkeletonShimmer {
-    0% { background-position: -320px 0; }
-    100% { background-position: 320px 0; }
+    0%   { background-position: -340px 0; }
+    100% { background-position:  340px 0; }
   }
-  .skel-shimmer {
-    background-color: rgba(120, 120, 135, 0.14);
+  .skel-bar {
+    display: inline-block;
+    border-radius: 999px;
+    background-color: rgba(120, 120, 135, 0.16);
     background-image: linear-gradient(
       90deg,
-      rgba(120, 120, 135, 0.14) 0px,
-      rgba(120, 120, 135, 0.14) 140px,
-      rgba(120, 120, 135, 0.28) 200px,
-      rgba(120, 120, 135, 0.14) 260px,
-      rgba(120, 120, 135, 0.14) 400px
+      rgba(120, 120, 135, 0.16) 0px,
+      rgba(120, 120, 135, 0.16) 150px,
+      rgba(120, 120, 135, 0.30) 210px,
+      rgba(120, 120, 135, 0.16) 270px,
+      rgba(120, 120, 135, 0.16) 420px
     );
-    background-size: 640px 100%;
-    animation: schoolagySkeletonShimmer 1.6s ease-in-out infinite;
+    background-size: 680px 100%;
+    background-repeat: no-repeat;
+    animation: schoolagySkeletonShimmer 1.25s ease-in-out infinite;
   }
+  .skel-dot { border-radius: 50%; }
+  /* Respect the OS setting: a constant sweep is a problem for some people.
+     The bar still reads as a placeholder without moving. */
   @media (prefers-reduced-motion: reduce) {
-    .skel-shimmer { animation: none; }
+    .skel-bar { animation: none; }
   }
+  /* Nothing inside a skeleton row should be clickable or focusable. */
+  [data-skel] { pointer-events: none; user-select: none; }
 `;
 
-function Bar({
-  width = "100%",
-  height = 14,
-  radius = 8,
-  style,
-}: {
-  width?: number | string;
-  height?: number;
-  radius?: number;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div
-      className="skel-shimmer"
-      style={{ width, height, borderRadius: radius, flexShrink: 0, ...style }}
-    />
-  );
+/** A shimmer bar. `w` accepts any CSS width so rows can vary believably. */
+function bar(w: string, h = 10): string {
+  return `<span class="skel-bar" style="width:${w};height:${h}px"></span>`;
 }
 
-function Circle({ size = 36, style }: { size?: number; style?: React.CSSProperties }) {
-  return (
-    <div
-      className="skel-shimmer"
-      style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, ...style }}
-    />
-  );
+function dot(size = 8): string {
+  return `<span class="skel-bar skel-dot" style="width:${size}px;height:${size}px"></span>`;
 }
 
-/** The top app-nav bar, shared by every real app page. */
-function NavSkeleton() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        maxWidth: 1100,
-        margin: "0 auto",
-        padding: "20px 24px 0",
-        boxSizing: "border-box",
-      }}
-    >
-      <Bar width={110} height={22} radius={6} />
-      <div style={{ display: "flex", gap: 22 }}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Bar key={i} width={54} height={14} />
-        ))}
-      </div>
-      <Circle size={34} />
-    </div>
-  );
+/**
+ * Widths cycle rather than sitting uniform, because real rows are ragged —
+ * a column of identical bars reads as a loading graphic, a ragged one reads
+ * as content that hasn't arrived.
+ */
+const W = ["68%", "52%", "80%", "44%", "72%", "58%"];
+const w = (i: number) => W[i % W.length];
+
+/**
+ * Pixel widths, for bars inside shrink-to-fit parents (table cells, flex
+ * items). A percentage there resolves against a parent whose width comes from
+ * the text that hasn't loaded yet, so it computes to zero and the bar simply
+ * doesn't appear.
+ */
+const PX = ["142px", "104px", "168px", "88px", "150px", "120px"];
+
+export interface SkeletonSpec {
+  /** CSS selector for the container the page's script will fill. */
+  sel: string;
+  /** How many placeholder rows to put in it. */
+  count: number;
+  /** Row markup, given its index. Reuses the page's real class names. */
+  row: (i: number) => string;
 }
 
-function Page({ children, maxWidth = 1100 }: { children: React.ReactNode; maxWidth?: number }) {
-  return (
-    <div style={{ maxWidth, margin: "0 auto", padding: "28px 24px 40px", boxSizing: "border-box" }}>
-      {children}
-    </div>
-  );
-}
+const SPECS: Record<string, SkeletonSpec[]> = {
+  home: [
+    // Ships as the literal text "Hey, Martin" and is rewritten from the saved
+    // profile once the script runs — so without this it greets every user by
+    // the sample name for the length of the fetch.
+    { sel: "#greetingTitle", count: 1, row: () => `<span data-skel>${bar("190px", 26)}</span>` },
+    {
+      sel: "#gradesBody",
+      count: 6,
+      row: (i) => `<tr data-skel>
+        <td><div class="course-cell">${dot()}<span class="course-name">${bar(PX[i % PX.length], 11)}</span></div></td>
+        <td>${bar("34px")}</td>
+        <td>${bar("72px", 18)}</td>
+        <td class="updated">${bar("46px")}</td>
+      </tr>`,
+    },
+    {
+      sel: "#overdueList",
+      count: 3,
+      row: (i) => `<div class="assign-item" data-skel>
+        <span class="assign-tick"></span>
+        <div class="assign-text"><p class="assign-title">${bar(PX[i % PX.length], 11)}</p>
+        <p class="assign-meta">${bar("120px", 8)}</p></div>
+        <span class="assign-due">${bar("52px", 9)}</span>
+      </div>`,
+    },
+    {
+      sel: "#upcomingList",
+      count: 3,
+      row: (i) => `<div class="assign-item" data-skel>
+        <span class="assign-tick"></span>
+        <div class="assign-text"><p class="assign-title">${bar(PX[(i + 2) % PX.length], 11)}</p>
+        <p class="assign-meta">${bar("104px", 8)}</p></div>
+        <span class="assign-due">${bar("52px", 9)}</span>
+      </div>`,
+    },
+    {
+      sel: "#todayList",
+      count: 1,
+      row: () => `<div class="today-item" data-skel>
+        <span class="today-tick"></span>
+        <div class="today-item-text"><p class="today-item-title">${bar("132px", 11)}</p>
+        <p class="today-item-class">${bar("78px", 8)}</p></div>
+      </div>`,
+    },
+    {
+      sel: "#messagesList",
+      count: 3,
+      row: (i) => `<div class="message-item" data-skel>
+        <span class="message-tick"></span>
+        <div class="message-item-text">
+          <div class="message-item-top"><p class="message-item-from">${bar("96px", 10)}</p>
+          <p class="message-item-time">${bar("40px", 9)}</p></div>
+          <p class="message-item-preview">${bar(PX[i % PX.length], 9)}</p>
+        </div>
+      </div>`,
+    },
+  ],
 
-function Card({ children, style }: { children?: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div
-      style={{
-        background: "rgba(120,120,135,0.05)",
-        border: "1px solid rgba(120,120,135,0.12)",
-        borderRadius: 20,
-        padding: 24,
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Row({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, ...style }}>{children}</div>
-  );
-}
-
-// ---------------------------------------------------------------- per-page
-
-function HomeSkel() {
-  return (
-    <Page>
-      <Bar width={220} height={30} radius={8} style={{ marginBottom: 24 }} />
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        <Card style={{ flex: "1 1 380px" }}>
-          <Bar width={140} height={16} style={{ marginBottom: 18 }} />
-          {[0, 1, 2, 3].map((i) => (
-            <Row key={i} style={{ marginBottom: 16 }}>
-              <Circle size={10} />
-              <Bar width="70%" />
-              <Bar width={40} height={12} style={{ marginLeft: "auto" }} />
-            </Row>
-          ))}
-        </Card>
-        <Card style={{ flex: "1 1 380px" }}>
-          <Bar width={160} height={16} style={{ marginBottom: 18 }} />
-          {[0, 1, 2, 3, 4].map((i) => (
-            <Row key={i} style={{ marginBottom: 16 }}>
-              <Circle size={18} />
-              <div style={{ flex: 1 }}>
-                <Bar width="80%" height={12} style={{ marginBottom: 6 }} />
-                <Bar width="40%" height={10} />
+  /*
+   * grades.html renders four cells per row (Class / Grade / Predicted Grade /
+   * Grade Calculator) — see renderGradesTable(). The `style="flex:1"` pair on
+   * the Class cell is the one thing here that isn't copied from the page: the
+   * real name and meta text give `.course-row-text` its width, and an empty
+   * placeholder gives an auto-layout table nothing to size the column from, so
+   * the min-width stands in for the text that hasn't arrived and stops the
+   * Class column snapping wider when it does.
+   */
+  grades: [
+    {
+      sel: "#gradesBody",
+      count: 6,
+      row: (i) => `<tr data-skel>
+        <td>
+          <div class="course-row">
+            <span class="course-tick skel-bar"></span>
+            <div class="course-row-text" style="flex:1;min-width:190px">
+              <div class="course-row-top">
+                <span class="course-row-name" style="flex:1">${bar(w(i), 11)}</span>
+                <span class="course-row-code">${bar("42px", 8)}</span>
               </div>
-            </Row>
-          ))}
-        </Card>
-      </div>
-    </Page>
-  );
-}
-
-function CoursesSkel() {
-  return (
-    <Page>
-      <Bar width={140} height={30} radius={8} style={{ marginBottom: 24 }} />
-      <Card>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <Row
-            key={i}
-            style={{
-              padding: "16px 0",
-              borderBottom: i < 5 ? "1px solid rgba(120,120,135,0.12)" : "none",
-            }}
-          >
-            <Circle size={10} />
-            <div style={{ flex: 1 }}>
-              <Bar width="45%" height={14} style={{ marginBottom: 6 }} />
-              <Bar width="25%" height={10} />
+              <div class="course-row-meta">${bar(w(i + 3), 8)}</div>
             </div>
-            <Bar width={54} height={22} radius={11} />
-          </Row>
-        ))}
-      </Card>
-    </Page>
-  );
-}
+          </div>
+        </td>
+        <td><span class="grade-val">${bar("20px", 13)}<span class="grade-pct">${bar("30px", 8)}</span></span></td>
+        <td><span class="trend flat"><span class="arrow">${dot(7)}</span>${bar("18px", 11)}<span class="grade-pct">${bar("32px", 8)}</span></span></td>
+        <td class="calc-cell">${bar("104px", 28)}</td>
+      </tr>`,
+    },
+  ],
 
-function CourseHomeSkel() {
-  return (
-    <Page>
-      <Bar width={90} height={12} style={{ marginBottom: 20 }} />
-      <Card style={{ height: 90, marginBottom: 24 }} />
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        <Card style={{ flex: "1 1 320px" }}>
-          <Bar width={150} height={16} style={{ marginBottom: 18 }} />
-          {[0, 1, 2].map((i) => (
-            <Row key={i} style={{ marginBottom: 16, alignItems: "flex-start" }}>
-              <Circle size={30} />
-              <div style={{ flex: 1 }}>
-                <Bar width="90%" height={12} style={{ marginBottom: 6 }} />
-                <Bar width="60%" height={12} />
+  /*
+   * courses.html shares the whole `.course-row` / `.grade-val` / `.trend`
+   * family with grades.html and adds two columns of its own: the assignment
+   * summary (`.assign-cell`, which carries the expand chevron) and Updated.
+   * The `upcoming` modifier is kept on `.assign-status` because that is what
+   * makes `.assign-status-due` a second line — without it the cell is a line
+   * shorter than the rows that replace it.
+   */
+  courses: [
+    {
+      sel: "#coursesBody",
+      count: 6,
+      row: (i) => `<tr data-skel>
+        <td>
+          <div class="course-row">
+            <span class="course-tick skel-bar"></span>
+            <div class="course-row-text" style="flex:1;min-width:190px">
+              <div class="course-row-top">
+                <span class="course-row-name" style="flex:1">${bar(w(i), 11)}</span>
+                <span class="course-row-code">${bar("42px", 8)}</span>
               </div>
-            </Row>
-          ))}
-        </Card>
-        <Card style={{ flex: "1 1 320px" }}>
-          <Bar width={130} height={16} style={{ marginBottom: 18 }} />
-          {[0, 1, 2, 3].map((i) => (
-            <Row key={i} style={{ marginBottom: 16 }}>
-              <Circle size={16} />
-              <Bar width="75%" />
-            </Row>
-          ))}
-        </Card>
-      </div>
-    </Page>
-  );
-}
-
-function CourseMaterialsSkel() {
-  return (
-    <Page>
-      <Bar width={90} height={12} style={{ marginBottom: 20 }} />
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            padding: 14,
-            borderBottom: "1px solid rgba(120,120,135,0.12)",
-          }}
-        >
-          <Circle size={12} />
-          <Circle size={12} />
-          <Circle size={12} />
-          <Bar width={160} height={12} style={{ marginLeft: 16 }} />
-        </div>
-        <div style={{ display: "flex", minHeight: 320 }}>
-          <div
-            style={{
-              width: 160,
-              borderRight: "1px solid rgba(120,120,135,0.12)",
-              padding: 16,
-            }}
-          >
-            {[0, 1, 2, 3].map((i) => (
-              <Bar key={i} width="85%" height={12} style={{ marginBottom: 18 }} />
-            ))}
-          </div>
-          <div
-            style={{
-              flex: 1,
-              padding: 20,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
-              gap: 20,
-              alignContent: "start",
-            }}
-          >
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                <Bar width={54} height={54} radius={10} />
-                <Bar width="80%" height={9} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </Card>
-    </Page>
-  );
-}
-
-function GradebookSkel() {
-  return (
-    <Page>
-      <Bar width={90} height={12} style={{ marginBottom: 20 }} />
-      <Card>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 28 }}>
-          <Bar width={160} height={160} radius={80} />
-        </div>
-        {[0, 1, 2].map((cat) => (
-          <div key={cat} style={{ marginBottom: 22 }}>
-            <Row style={{ marginBottom: 10 }}>
-              <Bar width={130} height={13} />
-              <Bar width={44} height={11} style={{ marginLeft: "auto" }} />
-            </Row>
-            {[0, 1].map((row) => (
-              <Row key={row} style={{ marginBottom: 8, paddingLeft: 8 }}>
-                <Bar width="55%" height={11} />
-                <Bar width={40} height={11} style={{ marginLeft: "auto" }} />
-              </Row>
-            ))}
-          </div>
-        ))}
-      </Card>
-    </Page>
-  );
-}
-
-function GradesSkel() {
-  return (
-    <Page>
-      <Bar width={100} height={30} radius={8} style={{ marginBottom: 24 }} />
-      <Card style={{ marginBottom: 24 }}>
-        {[0, 1, 2, 3].map((i) => (
-          <Row
-            key={i}
-            style={{
-              padding: "14px 0",
-              borderBottom: i < 3 ? "1px solid rgba(120,120,135,0.12)" : "none",
-            }}
-          >
-            <Circle size={9} />
-            <Bar width="40%" height={13} />
-            <Bar width={50} height={20} radius={10} style={{ marginLeft: "auto" }} />
-          </Row>
-        ))}
-      </Card>
-      <Card style={{ height: 180 }} />
-    </Page>
-  );
-}
-
-function AssignmentsSkel() {
-  return (
-    <Page>
-      <Bar width={160} height={30} radius={8} style={{ marginBottom: 20 }} />
-      <div style={{ display: "flex", gap: 10, marginBottom: 22 }}>
-        {[0, 1, 2, 3].map((i) => (
-          <Bar key={i} width={78} height={30} radius={15} />
-        ))}
-      </div>
-      <Card>
-        <Bar width={100} height={13} style={{ marginBottom: 16 }} />
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Row key={i} style={{ marginBottom: 18 }}>
-            <Circle size={16} />
-            <div style={{ flex: 1 }}>
-              <Bar width="65%" height={13} style={{ marginBottom: 6 }} />
-              <Bar width="30%" height={10} />
+              <div class="course-row-meta">${bar(w(i + 3), 8)}</div>
             </div>
-            <Bar width={70} height={10} />
-          </Row>
-        ))}
-      </Card>
-    </Page>
-  );
-}
-
-function AssignmentSkel() {
-  return (
-    <Page>
-      <Bar width={90} height={12} style={{ marginBottom: 20 }} />
-      <Card style={{ marginBottom: 22 }}>
-        <Bar width="70%" height={22} style={{ marginBottom: 10 }} />
-        <Bar width="35%" height={12} style={{ marginBottom: 20 }} />
-        <Bar width="100%" height={10} style={{ marginBottom: 8 }} />
-        <Bar width="95%" height={10} style={{ marginBottom: 8 }} />
-        <Bar width="60%" height={10} />
-      </Card>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        <Card style={{ flex: "1 1 260px" }}>
-          <Bar width={110} height={14} style={{ marginBottom: 16 }} />
-          {[0, 1].map((i) => (
-            <Row key={i} style={{ marginBottom: 14 }}>
-              <Bar width={26} height={26} radius={6} />
-              <Bar width="60%" height={11} />
-            </Row>
-          ))}
-        </Card>
-        <Card style={{ flex: "1 1 260px", height: 110 }} />
-      </div>
-    </Page>
-  );
-}
-
-function CalendarSkel() {
-  return (
-    <Page maxWidth={1160}>
-      <Bar width={160} height={30} radius={8} style={{ marginBottom: 20 }} />
-      <div style={{ display: "flex", gap: 24 }}>
-        <div style={{ width: 220, flexShrink: 0 }}>
-          <Card style={{ marginBottom: 20 }}>
-            <Bar width={100} height={12} style={{ marginBottom: 14 }} />
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
-              {Array.from({ length: 28 }).map((_, i) => (
-                <Bar key={i} width="100%" height={16} radius={4} />
-              ))}
-            </div>
-          </Card>
-          <Card style={{ height: 140 }} />
-        </div>
-        <Card style={{ flex: 1, padding: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
-            {Array.from({ length: 35 }).map((_, i) => (
-              <Bar key={i} width="100%" height={64} radius={8} />
-            ))}
           </div>
-        </Card>
-      </div>
-    </Page>
-  );
-}
+        </td>
+        <td><span class="grade-val">${bar("20px", 13)}<span class="grade-pct">${bar("30px", 8)}</span></span></td>
+        <td><span class="trend flat"><span class="arrow">${dot(7)}</span>${bar("18px", 11)}<span class="grade-pct">${bar("32px", 8)}</span></span></td>
+        <td>
+          <div class="assign-cell">
+            <span class="assign-status upcoming">${bar("92px", 10)}<span class="assign-status-due">${bar("64px", 8)}</span></span>
+            <span class="assign-expand-btn">${bar("13px", 13)}</span>
+          </div>
+        </td>
+        <td class="updated">${bar("52px", 9)}</td>
+      </tr>`,
+    },
+  ],
 
-function MessagesSkel() {
-  return (
-    <Page maxWidth={1100}>
-      <Bar width={150} height={30} radius={8} style={{ marginBottom: 20 }} />
-      <Card style={{ padding: 0, display: "flex", height: 460, overflow: "hidden" }}>
-        <div style={{ width: 280, borderRight: "1px solid rgba(120,120,135,0.12)", padding: 12 }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Row key={i} style={{ padding: "10px 6px" }}>
-              <Circle size={38} />
-              <div style={{ flex: 1 }}>
-                <Bar width="70%" height={12} style={{ marginBottom: 6 }} />
-                <Bar width="90%" height={10} />
-              </div>
-            </Row>
-          ))}
+  /*
+   * `#curVal` / `#predVal` are themselves the `.grade-hero-val` spans, so these
+   * rows are their *contents*: a letter grade and a `.grade-hero-pct` beside it
+   * (and, for the prediction, the `.grade-hero-trend` pill that wraps the
+   * arrow). `#gbCategories` mirrors renderCategories(): a `.gb-category` per
+   * weighting category, each a head, its `.gb-bar` average meter, and its
+   * `.gb-assign-row` list.
+   */
+  gradebook: [
+    {
+      sel: "#curVal",
+      count: 1,
+      row: () => `<span data-skel>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
+    },
+    {
+      sel: "#predVal",
+      count: 1,
+      row: () => `<span class="grade-hero-trend flat" data-skel><span class="arrow">${dot(9)}</span>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
+    },
+    {
+      sel: "#gbCategories",
+      count: 3,
+      row: (i) => `<div class="gb-category" data-skel>
+        <div class="gb-category-head">
+          <span class="gb-category-name">${bar("110px", 11)}</span>
+          <span class="gb-category-weight">${bar("86px", 9)}</span>
         </div>
-        <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-          <Bar width={220} height={38} radius={16} style={{ alignSelf: "flex-start" }} />
-          <Bar width={160} height={30} radius={16} style={{ alignSelf: "flex-end" }} />
-          <Bar width={260} height={44} radius={16} style={{ alignSelf: "flex-start" }} />
-          <Bar width={130} height={30} radius={16} style={{ alignSelf: "flex-end" }} />
+        <div class="gb-bar"><div class="gb-bar-fill skel-bar" style="width:${w(i)}"></div></div>
+        ${[0, 1, 2]
+          .map(
+            (j) => `<div class="gb-assign-row">
+          <span class="gb-assign-title" style="flex:1">${bar(w(i + j), 10)}</span>
+          <span class="gb-assign-score">${bar("54px", 9)}</span>
+        </div>`
+          )
+          .join("")}
+      </div>`,
+    },
+  ],
+
+  /*
+   * assignments.html builds its list in assignRowHTML() and groups it under
+   * `.assign-group-label` headings on the default "All" tab, so two of the
+   * seven placeholders carry a label above them. The status modifier
+   * (`overdue`/`upcoming`/…) is deliberately left off: it only recolors the
+   * tick, and a grey tick is the honest thing to show before the data says
+   * whether anything is late.
+   */
+  assignments: [
+    {
+      sel: "#assignListBody",
+      count: 7,
+      row: (i) => `${
+        i === 0 || i === 3 ? `<p class="assign-group-label" data-skel>${bar("68px", 8)}</p>` : ""
+      }<div class="assign-row" data-skel>
+        <span class="assign-tick"></span>
+        <div class="assign-text">
+          <p class="assign-course">${bar(w(i), 11)}</p>
+          <p class="assign-title">${bar(w(i + 2), 10)}</p>
+          <p class="assign-meta">${bar("72px", 8)}</p>
         </div>
-      </Card>
-    </Page>
-  );
-}
+        <span class="assign-due">${bar("64px", 9)}</span>
+      </div>`,
+    },
+  ],
 
-function ContactsSkel() {
-  return (
-    <Page>
-      <Bar width={130} height={30} radius={8} style={{ marginBottom: 24 }} />
-      <Card>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Row
-            key={i}
-            style={{
-              padding: "14px 0",
-              borderBottom: i < 5 ? "1px solid rgba(120,120,135,0.12)" : "none",
-            }}
-          >
-            <Circle size={40} />
-            <div style={{ flex: 1 }}>
-              <Bar width="35%" height={13} style={{ marginBottom: 6 }} />
-              <Bar width="50%" height={10} />
-            </div>
-            <Bar width={70} height={26} radius={13} />
-          </Row>
-        ))}
-      </Card>
-    </Page>
-  );
-}
+  assignment: [
+    // `#assignTitle` is a plain <h1 class="title"> the page fills with
+    // textContent, so one bar standing in for the line is the whole of it.
+    { sel: "#assignTitle", count: 1, row: () => `<span data-skel>${bar("62%", 22)}</span>` },
+    {
+      // materialRowHTML(m, true) in assignment.html: the file-type badge,
+      // the name, and the Download button in its `.material-actions` box.
+      sel: "#materialsList",
+      count: 3,
+      row: (i) => `<div class="material-row" data-skel>
+        <span class="material-badge">${bar("30px", 30)}</span>
+        <span class="material-name">${bar(w(i), 10)}</span>
+        <div class="material-actions">${dot(28)}</div>
+      </div>`,
+    },
+  ],
 
-function SettingsSkel() {
-  return (
-    <Page>
-      <Bar width={110} height={30} radius={8} style={{ marginBottom: 24 }} />
-      <div style={{ display: "flex", gap: 24 }}>
-        <div style={{ width: 200, flexShrink: 0 }}>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Bar key={i} width="90%" height={16} style={{ marginBottom: 20 }} />
-          ))}
+  messages: [
+    {
+      // renderThreadList() in messages.html. The name/time line is a flex
+      // row, so those two bars are sized in px — a percentage width inside
+      // a shrink-to-fit flex item resolves against nothing and collapses.
+      sel: "#threadList",
+      count: 7,
+      row: (i) => `<div class="msgs-thread-row" data-skel>
+        <span class="msgs-avatar">${dot(44)}</span>
+        <div class="msgs-thread-row-text">
+          <div class="msgs-thread-row-top">
+            <span class="msgs-thread-row-name">${bar(`${96 + (i % 3) * 22}px`, 11)}</span>
+            <span class="msgs-thread-row-time">${bar("34px", 8)}</span>
+          </div>
+          <div class="msgs-thread-row-subject">${bar(w(i), 9)}</div>
+          <div class="msgs-thread-row-preview">${bar(w(i + 2), 9)}</div>
         </div>
-        <Card style={{ flex: 1 }}>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Row
-              key={i}
-              style={{
-                padding: "16px 0",
-                borderBottom: i < 3 ? "1px solid rgba(120,120,135,0.12)" : "none",
-              }}
-            >
-              <div style={{ flex: 1 }}>
-                <Bar width="40%" height={13} style={{ marginBottom: 6 }} />
-                <Bar width="60%" height={10} />
-              </div>
-              <Bar width={42} height={24} radius={12} />
-            </Row>
-          ))}
-        </Card>
-      </div>
-    </Page>
-  );
-}
+      </div>`,
+    },
+  ],
 
-const SKELETONS: Record<string, () => React.ReactElement> = {
-  home: HomeSkel,
-  courses: CoursesSkel,
-  "course-home": CourseHomeSkel,
-  "course-materials": CourseMaterialsSkel,
-  gradebook: GradebookSkel,
-  grades: GradesSkel,
-  assignments: AssignmentsSkel,
-  assignment: AssignmentSkel,
-  calendar: CalendarSkel,
-  messages: MessagesSkel,
-  contacts: ContactsSkel,
-  settings: SettingsSkel,
+  contacts: [
+    {
+      // contactRowHTML() in contacts.html. The row's Email quick-action is
+      // a real <a>; a span keeps the same 30px box without being a link.
+      sel: "#contactsListBody",
+      count: 8,
+      row: (i) => `<div class="contact-row" data-skel>
+        <span class="contact-avatar">${dot(38)}</span>
+        <div class="contact-text">
+          <p class="contact-name">${bar(w(i))}</p>
+          <p class="contact-role">${bar(w(i + 3), 9)}</p>
+          <p class="contact-meta">${bar("52%", 8)}</p>
+        </div>
+        <span class="contact-email-btn">${dot(14)}</span>
+      </div>`,
+    },
+  ],
+
+  /* calendar: deliberately has no spec.
+     #calBody isn't a list of data rows — renderMonthView() replaces it
+     wholesale with a .cal-grid-wrap > .cal-dow-row + .cal-month-grid, and
+     week/year/search views swap in three further shapes. The grid itself
+     is computed locally from focusDate, not fetched: the weekday header
+     and every .cal-day-num appear the instant the script runs, so
+     shimmering them would claim they're loading. The only real data is the
+     .cal-event-chip set, which lands on an unpredictable subset of days —
+     any placement we picked would be invented, and the row count (5 vs 6
+     week rows) depends on a month we can't know yet. Better nothing than a
+     grid that rearranges itself the moment the real one arrives. */
+
+  /*
+   * `#curVal` / `#predVal` are the `.grade-hero-val` spans themselves, filled
+   * with a letter grade plus a `.grade-hero-pct` (and, for the prediction, the
+   * `.grade-hero-trend` pill around the arrow) — same shape as gradebook's.
+   * The band class (`good`/`mid`/`bad`) is left off: it only colors the letter,
+   * and guessing a color before the grade loads would be a claim, not a shape.
+   */
+  "course-home": [
+    {
+      sel: "#curVal",
+      count: 1,
+      row: () => `<span data-skel>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
+    },
+    {
+      sel: "#predVal",
+      count: 1,
+      row: () => `<span class="grade-hero-trend" data-skel><span class="arrow">${dot(9)}</span>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
+    },
+    {
+      // announceRowHTML(): each post is a <button class="announce-item">.
+      // tabindex="-1" keeps the placeholders out of the tab order — the
+      // [data-skel] rule handles the pointer, not the keyboard.
+      sel: "#announceList",
+      count: 3,
+      row: (i) => `<button type="button" class="announce-item" tabindex="-1" data-skel>
+        <div class="announce-item-head">
+          <span class="announce-avatar">${dot(24)}</span>
+          <span class="announce-author">${bar("96px", 9)}</span>
+          <span class="announce-time">${bar("38px", 8)}</span>
+        </div>
+        <p class="announce-text">${bar(w(i), 10)}</p>
+      </button>`,
+    },
+    {
+      // assignRowHTML(). The status modifier is left off for the same reason
+      // as assignments.html's: it only recolors `.hub-assign-tick`, which
+      // already has a neutral background of its own.
+      sel: "#assignListBody",
+      count: 4,
+      row: (i) => `<div class="hub-assign-item" data-skel>
+        <span class="hub-assign-tick"></span>
+        <div class="hub-assign-text">
+          <p class="hub-assign-title">${bar(w(i), 10)}</p>
+          <p class="hub-assign-meta">${bar("42%", 8)}</p>
+        </div>
+        <span class="hub-assign-due">${bar("56px", 9)}</span>
+      </div>`,
+    },
+  ],
+
+  /*
+   * Only the grid is specced. course-materials.html renders `#itemGrid` or
+   * the `#itemList` table depending on `view`, which starts at 'grid', and
+   * the table shows up `hidden` in the markup — placeholders in its tbody
+   * would be invisible. The star badge is omitted: it's per-file state, so
+   * reserving room for one on every tile would invent starred files.
+   */
+  "course-materials": [
+    {
+      sel: "#itemGrid",
+      count: 10,
+      row: (i) => `<div class="item-tile" data-skel>
+        <span class="item-icon">${bar("34px", 40)}</span>
+        <span class="item-name">${bar(`${44 + (i % 3) * 16}px`, 9)}</span>
+      </div>`,
+    },
+  ],
 };
 
-export default function PageSkeleton({ id }: { id?: string }) {
-  const Body = id ? SKELETONS[id] : undefined;
-  // No entry (login, onboarding, or an id we don't recognize) — fall back to
-  // the pre-2026-09-09 behavior of rendering nothing.
-  if (!Body) return null;
-
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: SHIMMER_CSS }} />
-      <NavSkeleton />
-      <Body />
-    </>
-  );
+/**
+ * Drops placeholder rows into `root` for the given page and returns a cleanup
+ * that removes them again.
+ *
+ * Silently skips a selector that isn't present: a page legitimately renders
+ * different containers in different states (Course Materials' grid vs list
+ * view), and a missing one during loading is not worth throwing over. Real
+ * drift is caught at build time instead — see verify-pages.mjs.
+ */
+/**
+ * The placeholder markup for a page, as `[selector, html]` pairs.
+ *
+ * Split out from injectSkeleton so it can be built and inspected without a
+ * DOM — which is what lets verify/skeleton-preview.mjs render every page's
+ * loading state to a real browser for review. A skeleton nobody can look at
+ * is how the last set drifted into being wrong.
+ */
+export function skeletonMarkup(pageId?: string): Array<[string, string]> {
+  const specs = pageId ? SPECS[pageId] : undefined;
+  if (!specs) return [];
+  return specs.map((spec) => [
+    spec.sel,
+    Array.from({ length: spec.count }, (_, i) => spec.row(i)).join(""),
+  ]);
 }
+
+export function injectSkeleton(root: HTMLElement, pageId?: string): () => void {
+  const specs = pageId ? SPECS[pageId] : undefined;
+  if (!specs) return () => {};
+
+  // Original contents are saved and put back on cleanup. That matters for the
+  // handful of slots that ship with sample text rather than empty — home's
+  // "Hey, Martin" greeting, an assignment's placeholder title. Left alone,
+  // those would show one student's sample name to a different student for the
+  // length of the fetch, which is worse than a shimmer. Restoring (rather
+  // than blanking) means that if the page script never runs, the markup is
+  // exactly as it shipped.
+  const restore: Array<[HTMLElement, string]> = [];
+  for (const spec of specs) {
+    const host = root.querySelector<HTMLElement>(spec.sel);
+    if (!host) continue;
+    restore.push([host, host.innerHTML]);
+    host.setAttribute("data-skel-host", "");
+    host.innerHTML = Array.from({ length: spec.count }, (_, i) => spec.row(i)).join("");
+  }
+
+  return () => {
+    for (const [host, html] of restore) {
+      host.innerHTML = html;
+      host.removeAttribute("data-skel-host");
+    }
+  };
+}
+
+/** Page ids that have a spec — used by verify-pages.mjs and by LegacyPage. */
+export const SKELETON_PAGES = Object.keys(SPECS);
+export const SKELETON_SELECTORS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SPECS).map(([id, specs]) => [id, specs.map((s) => s.sel)])
+);

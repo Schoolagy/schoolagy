@@ -183,5 +183,35 @@ expect("Live-data hooks", wiring.liveData, [
   "messages/page.tsx",
 ]);
 
+// ── Skeleton selectors ───────────────────────────────────────────────────
+// PageSkeleton.tsx injects shimmer rows into each page's real data containers
+// using that page's own ids and classes. That is what makes the placeholders
+// land in the right place — and it means a renamed container silently turns
+// the loading state into nothing. Fail the build instead, the same way
+// port-pages.mjs's assertReplaced does for the other transforms.
+{
+  const skelSrc = fs.readFileSync(
+    path.join(APP_DIR, "components/PageSkeleton.tsx"), "utf8");
+  const specBody = skelSrc.slice(skelSrc.indexOf("const SPECS"));
+  const pages = [...specBody.matchAll(/^  "?([a-z-]+)"?:\s*\[/gm)];
+  let missing = [];
+  pages.forEach((m, idx) => {
+    const page = m[1];
+    const end = idx + 1 < pages.length ? pages[idx + 1].index : specBody.length;
+    const block = specBody.slice(m.index, end);
+    const srcPath = path.resolve(APP_DIR, `../pages-src/${page}.html`);
+    if (!fs.existsSync(srcPath)) { missing.push(`${page}: no such page`); return; }
+    const html = fs.readFileSync(srcPath, "utf8");
+    for (const sm of block.matchAll(/sel:\s*"#([A-Za-z0-9_-]+)"/g)) {
+      if (!html.includes(`id="${sm[1]}"`)) missing.push(`${page}: #${sm[1]}`);
+    }
+  });
+  if (missing.length) {
+    fail(`Skeleton selectors: container(s) no longer in the page — ${missing.join(", ")}`);
+  } else {
+    pass(`Skeleton selectors: ${pages.length} pages wired`);
+  }
+}
+
 console.log(`\n${checks} checks passed, ${failures} failed\n`);
 process.exit(failures > 0 ? 1 : 0);

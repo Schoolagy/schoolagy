@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
-import PageSkeleton from "./PageSkeleton";
+import { SKELETON_CSS, injectSkeleton } from "./PageSkeleton";
 
 /**
  * Dark mode + accent/background "theme" tokens, shared by every real app
@@ -50,6 +50,41 @@ function darkenHex(hex: string, amount: number): string {
   return "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Applies the page background to BOTH <html> and <body>, and declares the
+ * matching `color-scheme`.
+ *
+ * Added 2026-09-16 for a bug Martin hit in Firefox: with a blue background the
+ * scrollbar rendered pink. The cause is that browser-drawn UI — scrollbars,
+ * the overscroll area, form controls — is themed from `color-scheme` and from
+ * the CANVAS background, not from whatever JS later set on <body>. This app
+ * declared neither: no page has a `color-scheme`, and the background was set
+ * on <body> only, after load. So Firefox picked its own light-theme scrollbar
+ * and drew it against a dark/coloured canvas, which is where the odd tint
+ * comes from. Chrome happens to guess differently, which is why it only
+ * showed up in Firefox.
+ *
+ * Setting <html> too also fixes the strip of stale colour that can appear when
+ * you scroll past the end of the page.
+ *
+ * Pass null to leave a value alone.
+ */
+function setPageBackground(
+  image: string | null,
+  color: string | null,
+  scheme: "dark" | "light"
+): void {
+  const html = document.documentElement;
+  html.style.colorScheme = scheme;
+  if (image !== null) document.body.style.backgroundImage = image;
+  if (color !== null) {
+    document.body.style.backgroundColor = color;
+    // The canvas — what the browser paints behind everything, including the
+    // scrollbar track and the overscroll gutter.
+    html.style.backgroundColor = color;
+  }
+}
+
 function applyStoredTheme(): void {
   const root = document.documentElement.style;
 
@@ -90,15 +125,18 @@ function applyStoredTheme(): void {
     }
     if (saved && saved.background) {
       if (saved.background === "white") {
-        document.body.style.backgroundImage = "none";
-        document.body.style.backgroundColor = "#f4f4f6";
+        setPageBackground("none", "#f4f4f6", "light");
       } else if (saved.background === "black") {
-        document.body.style.backgroundImage = "none";
-        document.body.style.backgroundColor = "#0c0c0e";
+        setPageBackground("none", "#0c0c0e", "dark");
       } else {
-        document.body.style.backgroundImage = `url("${saved.background}")`;
-        document.body.style.backgroundColor = "";
+        // A wallpaper image. Its average brightness is unknown, so the browser
+        // UI follows the dark-mode preference rather than guessing.
+        setPageBackground(`url("${saved.background}")`, "", isDark ? "dark" : "light");
       }
+    } else {
+      // Nothing saved: the page's own CSS default (the near-black #0c0c0e) is
+      // what's showing, so tell the browser that's what it's theming against.
+      setPageBackground(null, null, "dark");
     }
   } catch {
     // Malformed JSON or private browsing — the page's own default look
@@ -317,25 +355,33 @@ export default function LegacyPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, scriptJs, hasUploads]);
 
-  // A page-shaped skeleton until we know who this is — not a spinner (see
-  // PageSkeleton.tsx for why: these pages paint their own full-bleed
-  // background, and a spinner on a different ground flashes worse than a
-  // beat of nothing). The page's own <style> is already injected here so the
-  // real background/theme is in place under the skeleton from the first
-  // frame; pages with no matching skeleton (login, onboarding) still fall
-  // back to the original blank-until-ready behavior.
-  if (phase !== "ready") {
-    return (
-      <>
-        <style dangerouslySetInnerHTML={{ __html: styleCss }} />
-        <PageSkeleton id={pageId} />
-      </>
-    );
-  }
+  /**
+   * Loading state, reworked 2026-09-16.
+   *
+   * It used to return a completely separate tree here — a hand-drawn
+   * approximation of the whole page — and only mount the real markup once the
+   * fetch resolved. That meant every heading, column title and nav item was a
+   * grey box, and the approximations drifted from the real pages.
+   *
+   * Now the real markup mounts immediately and shimmer rows are injected only
+   * into the containers the page's own script fills (see PageSkeleton.tsx).
+   * Real chrome from the first frame, no second version of each page to keep
+   * in sync, and nothing moves when the data lands because the placeholders
+   * are sitting in the real containers using the real classes.
+   *
+   * Safe because every data container in pages-src ships empty — so this shows
+   * genuine structure with holes, never a stranger's sample grades.
+   */
+  useLayoutEffect(() => {
+    const root = containerRef.current;
+    if (!root || phase === "ready") return;
+    return injectSkeleton(root, pageId);
+  }, [phase, pageId]);
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: styleCss }} />
+      <style dangerouslySetInnerHTML={{ __html: SKELETON_CSS }} />
       {mode === "demo" && !bannerDismissed && (
         <div
           role="status"
