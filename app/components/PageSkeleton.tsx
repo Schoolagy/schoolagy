@@ -59,6 +59,21 @@ export const SKELETON_CSS = `
   }
   /* Nothing inside a skeleton row should be clickable or focusable. */
   [data-skel] { pointer-events: none; user-select: none; }
+
+  /* The hand-off: real rows fade up from the top of the page down.
+     Opacity ONLY — no movement of any kind. An earlier version lifted each
+     row 6px as it faded, which made the page look like it was sliding into
+     place rather than filling in; Martin's note was exactly that: "i dont
+     want the whole page to revel up to down i only want the data to do
+     that". The structure is already at its final size and position from the
+     first frame, and it stays there. */
+  @keyframes schoolagyReveal {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] { animation: none !important; }
+  }
 `;
 
 /** A shimmer bar. `w` accepts any CSS width so rows can vary believably. */
@@ -93,6 +108,15 @@ export interface SkeletonSpec {
   count: number;
   /** Row markup, given its index. Reuses the page's real class names. */
   row: (i: number) => string;
+  /**
+   * Whether this slot joins the top-to-bottom reveal. Default true.
+   *
+   * False for page furniture — the greeting, a course title, the big current/
+   * predicted grade numbers. Those are headings, not data, and animating them
+   * makes the whole page look like it's sliding in rather than the rows
+   * filling. Per Martin: only the data should do that.
+   */
+  reveal?: boolean;
 }
 
 const SPECS: Record<string, SkeletonSpec[]> = {
@@ -100,7 +124,7 @@ const SPECS: Record<string, SkeletonSpec[]> = {
     // Ships as the literal text "Hey, Martin" and is rewritten from the saved
     // profile once the script runs — so without this it greets every user by
     // the sample name for the length of the fetch.
-    { sel: "#greetingTitle", count: 1, row: () => `<span data-skel>${bar("190px", 26)}</span>` },
+    { sel: "#greetingTitle", count: 1, reveal: false, row: () => `<span data-skel>${bar("190px", 26)}</span>` },
     {
       sel: "#gradesBody",
       count: 6,
@@ -236,11 +260,13 @@ const SPECS: Record<string, SkeletonSpec[]> = {
   gradebook: [
     {
       sel: "#curVal",
+      reveal: false,
       count: 1,
       row: () => `<span data-skel>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
     },
     {
       sel: "#predVal",
+      reveal: false,
       count: 1,
       row: () => `<span class="grade-hero-trend flat" data-skel><span class="arrow">${dot(9)}</span>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
     },
@@ -294,7 +320,7 @@ const SPECS: Record<string, SkeletonSpec[]> = {
   assignment: [
     // `#assignTitle` is a plain <h1 class="title"> the page fills with
     // textContent, so one bar standing in for the line is the whole of it.
-    { sel: "#assignTitle", count: 1, row: () => `<span data-skel>${bar("62%", 22)}</span>` },
+    { sel: "#assignTitle", count: 1, reveal: false, row: () => `<span data-skel>${bar("62%", 22)}</span>` },
     {
       // materialRowHTML(m, true) in assignment.html: the file-type badge,
       // the name, and the Download button in its `.material-actions` box.
@@ -369,11 +395,13 @@ const SPECS: Record<string, SkeletonSpec[]> = {
   "course-home": [
     {
       sel: "#curVal",
+      reveal: false,
       count: 1,
       row: () => `<span data-skel>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
     },
     {
       sel: "#predVal",
+      reveal: false,
       count: 1,
       row: () => `<span class="grade-hero-trend" data-skel><span class="arrow">${dot(9)}</span>${bar("30px", 26)}</span><span class="grade-hero-pct" data-skel>${bar("34px", 10)}</span>`,
     },
@@ -454,36 +482,172 @@ export function skeletonMarkup(pageId?: string): Array<[string, string]> {
   ]);
 }
 
-export function injectSkeleton(root: HTMLElement, pageId?: string): () => void {
-  const specs = pageId ? SPECS[pageId] : undefined;
-  if (!specs) return () => {};
+/**
+ * Replaces the inner HTML of the element carrying `id` — as a string, with no
+ * DOM involved.
+ *
+ * Scans forward from the opening tag counting same-name tags so that a
+ * container holding nested elements of its own kind (a `<div id="x">` with
+ * `<div>`s inside it) ends at its OWN closing tag rather than the first one.
+ * Returns the input untouched if the id isn't there or the element is
+ * self-closing, which is the same "silently skip" behaviour the DOM version
+ * had: a page legitimately renders different containers in different states.
+ */
+function replaceInnerHtml(html: string, id: string, inner: string): string {
+  const open = new RegExp(`<([a-zA-Z][\\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*\\sid=["']${id}["'](?:[^>"']|"[^"]*"|'[^']*')*)>`).exec(html);
+  if (!open) return html;
+  if (open[2].trimEnd().endsWith("/")) return html;
 
-  // Original contents are saved and put back on cleanup. That matters for the
-  // handful of slots that ship with sample text rather than empty — home's
-  // "Hey, Martin" greeting, an assignment's placeholder title. Left alone,
-  // those would show one student's sample name to a different student for the
-  // length of the fetch, which is worse than a shimmer. Restoring (rather
-  // than blanking) means that if the page script never runs, the markup is
-  // exactly as it shipped.
-  const restore: Array<[HTMLElement, string]> = [];
-  for (const spec of specs) {
-    const host = root.querySelector<HTMLElement>(spec.sel);
-    if (!host) continue;
-    restore.push([host, host.innerHTML]);
-    host.setAttribute("data-skel-host", "");
-    host.innerHTML = Array.from({ length: spec.count }, (_, i) => spec.row(i)).join("");
-  }
+  const tag = open[1].toLowerCase();
+  const openEnd = open.index + open[0].length;
+  const scan = new RegExp(`<(/?)${tag}\\b[^>]*>`, "gi");
+  scan.lastIndex = openEnd;
 
-  return () => {
-    for (const [host, html] of restore) {
-      host.innerHTML = html;
-      host.removeAttribute("data-skel-host");
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = scan.exec(html))) {
+    if (match[1]) {
+      depth -= 1;
+      if (depth === 0) return html.slice(0, openEnd) + inner + html.slice(match.index);
+    } else if (!match[0].trimEnd().endsWith("/>")) {
+      depth += 1;
     }
-  };
+  }
+  return html;
+}
+
+/**
+ * A page's body markup with the shimmer already sitting in its data slots.
+ *
+ * This is the whole point of the 2026-09-16 rework. The DOM version of this
+ * (`injectSkeleton`, now gone) ran in a layout effect, which is before the
+ * browser paints — but only once React has hydrated. The server-rendered HTML
+ * reaches the screen well before that, so for about one tenth of a second the
+ * page showed its real card, its real column headings and NOTHING in between:
+ * correct structure, no placeholders. Exactly the gap Martin caught on video.
+ *
+ * Doing it as a string means the skeleton is in the HTML the server sends, so
+ * the very first painted frame already has it — which is what the Cloudflare
+ * dashboard does and what he asked for: the structure is there at its final
+ * size, the data is not, and the holes are visibly loading.
+ *
+ * Every selector in SPECS is an id (verify-pages.mjs enforces that they all
+ * still exist), so a targeted string replacement is enough; no HTML parser.
+ */
+export function skeletonHtml(bodyHtml: string, pageId?: string): string {
+  let out = bodyHtml;
+  for (const [sel, inner] of skeletonMarkup(pageId)) {
+    if (!sel.startsWith("#")) continue;
+    out = replaceInnerHtml(out, sel.slice(1), inner);
+  }
+  return out;
+}
+
+/**
+ * Two rows count as the same band when their tops are within this many pixels
+ * of each other. Not zero: a table cell and a floated widget row that look
+ * level to the eye are often a pixel or two apart after sub-pixel layout, and
+ * splitting those into separate bands is visible as a stutter.
+ */
+const BAND_TOLERANCE_PX = 6;
+/**
+ * Gap between one band lighting up and the next — the speed of the wave down
+ * the page. Raised from 40ms on 2026-09-16 at Martin's request ("make the top
+ * to down animation a bit slower"): at 40 the wave was over almost before you
+ * registered it was a wave.
+ */
+const BAND_STEP_MS = 70;
+/**
+ * Ceiling on the stagger. Without it a 40-row list at 70ms a band would take
+ * nearly three seconds to finish arriving; with it the tail of a long list
+ * comes in together rather than making you wait for it.
+ */
+const BAND_MAX_MS = 560;
+/** How long one band takes to fade in. */
+const REVEAL_MS = 320;
+
+/**
+ * Fades the real rows in once the page's own script has filled the containers
+ * the skeleton was holding — top of the page downwards, and everything level
+ * with each other at the same moment.
+ *
+ * Two rules, both straight from Martin:
+ *
+ *   1. "ONLY the data that need to be pulled" — furniture (the greeting, an
+ *      assignment's title, the big current/predicted grade numbers) is marked
+ *      `reveal: false` in SPECS and never animates. Those are headings; fading
+ *      them is what made the whole page look like it was arriving.
+ *   2. "if the data is on the same x axis they revel at the same time" — rows
+ *      are grouped into horizontal bands by their measured top and each BAND
+ *      gets one delay, not each element. Home fills a grades table and two
+ *      assignment lists side by side; without this, the row at the top of the
+ *      middle column would wait behind every row of the left one.
+ *
+ * All the geometry is read in one pass before anything is written, so this
+ * doesn't thrash layout: reading a rect after setting a style on the previous
+ * element would force a synchronous reflow per row.
+ */
+export function revealContent(root: HTMLElement, pageId?: string): void {
+  const sels = pageId ? REVEAL_SELECTORS[pageId] : undefined;
+  if (!sels || sels.length === 0) return;
+
+  const candidates: HTMLElement[] = [];
+  for (const sel of sels) {
+    const host = root.querySelector<HTMLElement>(sel);
+    if (!host) continue;
+    for (const child of Array.from(host.children)) candidates.push(child as HTMLElement);
+  }
+  if (candidates.length === 0) return;
+
+  // Read every position first...
+  const rows: Array<{ el: HTMLElement; top: number; order: number }> = [];
+  candidates.forEach((el, order) => {
+    const rect = el.getBoundingClientRect();
+    // Skip anything not actually on screen. Home's Messages widget is off by
+    // default, so its rows measure 0x0 — left in, they'd collect the first
+    // three slots of the cascade and delay every visible row behind an
+    // animation nobody can see.
+    if (rect.height === 0 && rect.width === 0) return;
+    rows.push({ el, top: rect.top, order });
+  });
+  if (rows.length === 0) return;
+
+  // Sort by vertical position, falling back to document order for a tie so
+  // that side-by-side rows resolve left-to-right instead of arbitrarily.
+  rows.sort((a, b) => (a.top - b.top) || (a.order - b.order));
+
+  // ...then write. `bandTop` tracks the first row of the current band rather
+  // than the previous row, so a long column of rows 4px apart can't creep into
+  // one band a pixel at a time.
+  let band = 0;
+  let bandTop = rows[0].top;
+  for (const row of rows) {
+    if (row.top - bandTop > BAND_TOLERANCE_PX) {
+      band += 1;
+      bandTop = row.top;
+    }
+    const delay = Math.min(band * BAND_STEP_MS, BAND_MAX_MS);
+    row.el.setAttribute("data-reveal", "");
+    row.el.style.animation = `schoolagyReveal ${REVEAL_MS}ms ease-out ${delay}ms both`;
+    row.el.addEventListener("animationend", () => {
+      // Leave no inline styles behind, so nothing the page does later has to
+      // fight them and a re-render can't replay the reveal.
+      row.el.style.animation = "";
+      row.el.removeAttribute("data-reveal");
+    }, { once: true });
+  }
 }
 
 /** Page ids that have a spec — used by verify-pages.mjs and by LegacyPage. */
 export const SKELETON_PAGES = Object.keys(SPECS);
 export const SKELETON_SELECTORS: Record<string, string[]> = Object.fromEntries(
   Object.entries(SPECS).map(([id, specs]) => [id, specs.map((s) => s.sel)])
+);
+
+/** Only the data containers — what the reveal animation is allowed to touch. */
+export const REVEAL_SELECTORS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SPECS).map(([id, specs]) => [
+    id,
+    specs.filter((s) => s.reveal !== false).map((s) => s.sel),
+  ])
 );

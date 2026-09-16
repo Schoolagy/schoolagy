@@ -1,147 +1,21 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
-import { SKELETON_CSS, injectSkeleton } from "./PageSkeleton";
+import { SKELETON_CSS, skeletonHtml, revealContent } from "./PageSkeleton";
 
 /**
- * Dark mode + accent/background "theme" tokens, shared by every real app
- * page via the same localStorage records Settings/onboarding already write
- * (`schoolagy_dark_mode`, `schoolagy_appearance`).
+ * Re-applies the saved theme when ANOTHER tab changes it.
  *
- * Added 2026-09-09, fixing two things Martin hit for real:
- *
- *   1. Dark mode was only ever wired up inside settings.html, calendar.html
- *      and onboarding.html — each duplicating its own read+apply logic. The
- *      other 9 real pages (Home, Courses, Course Home, Course Materials,
- *      Gradebook, Grades, Assignments, an assignment's own page, Messages,
- *      Contacts) never read `schoolagy_dark_mode` at all, despite already
- *      defining the exact same --panel-bg/--text-dark/etc. tokens at :root
- *      with the exact same light-mode values — the CSS was ready, nothing
- *      ever applied the dark ones. That's why toggling Dark Mode in
- *      Settings visibly "doesn't do anything but change only the settings
- *      color": Settings (and Calendar) were the only pages listening.
- *   2. Accent/background WERE already applied on every page, but only from
- *      each page's own inline <script> — which LegacyPage only mounts once
- *      the "checking" phase resolves (see the effect below), one paint
- *      after the skeleton/page first appears with its hardcoded default
- *      (`--accent: #d94a2b`, a red-orange). That one-paint gap is what
- *      read as "the red background flashes all the time during page to
- *      page loading."
- *
- * Doing both here instead, once, in a layout effect — which React runs
- * synchronously after the DOM is updated but BEFORE the browser paints,
- * unlike a normal effect — means the very first frame of every route
- * (including the "checking" skeleton) already carries the user's real
- * dark-mode/accent/background choice, and it now covers all 15 routes
- * instead of 3. Each page's own duplicated read-only accent/background IIFE
- * (and settings.html/calendar.html/onboarding.html's own dark-mode logic,
- * which also still WRITES the preference) still runs too, once that page's
- * script mounts — harmless, since it's applying the same values a second
- * time, not worth ripping out of a dozen already-large source pages for a
- * no-op.
+ * The theme itself is applied by the inline boot script in app/layout.tsx
+ * (see app/lib/theme-boot.ts), which runs before the first paint — far
+ * earlier than any React code can. This file used to carry a second copy of
+ * that logic in a layout effect; that copy is gone, and this just calls the
+ * one the boot script left on `window`.
  */
-function darkenHex(hex: string, amount: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
-  const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
-  const b = Math.max(0, (n & 255) * (1 - amount));
-  return "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
-}
-
-/**
- * Applies the page background to BOTH <html> and <body>, and declares the
- * matching `color-scheme`.
- *
- * Added 2026-09-16 for a bug Martin hit in Firefox: with a blue background the
- * scrollbar rendered pink. The cause is that browser-drawn UI — scrollbars,
- * the overscroll area, form controls — is themed from `color-scheme` and from
- * the CANVAS background, not from whatever JS later set on <body>. This app
- * declared neither: no page has a `color-scheme`, and the background was set
- * on <body> only, after load. So Firefox picked its own light-theme scrollbar
- * and drew it against a dark/coloured canvas, which is where the odd tint
- * comes from. Chrome happens to guess differently, which is why it only
- * showed up in Firefox.
- *
- * Setting <html> too also fixes the strip of stale colour that can appear when
- * you scroll past the end of the page.
- *
- * Pass null to leave a value alone.
- */
-function setPageBackground(
-  image: string | null,
-  color: string | null,
-  scheme: "dark" | "light"
-): void {
-  const html = document.documentElement;
-  html.style.colorScheme = scheme;
-  if (image !== null) document.body.style.backgroundImage = image;
-  if (color !== null) {
-    document.body.style.backgroundColor = color;
-    // The canvas — what the browser paints behind everything, including the
-    // scrollbar track and the overscroll gutter.
-    html.style.backgroundColor = color;
-  }
-}
-
-function applyStoredTheme(): void {
-  const root = document.documentElement.style;
-
-  let isDark = false;
-  try {
-    const v = window.localStorage.getItem("schoolagy_dark_mode");
-    if (v === "dark") isDark = true;
-    else if (v === "light") isDark = false;
-    else isDark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  } catch {
-    isDark = false;
-  }
-  if (isDark) {
-    root.setProperty("--panel-bg", "#1c1d26");
-    root.setProperty("--panel-inner", "#15161e");
-    root.setProperty("--text-dark", "#f0f0f5");
-    root.setProperty("--text-muted", "#a3a5bd");
-    root.setProperty("--text-faint", "#6f7086");
-    root.setProperty("--border", "#33344a");
-    root.setProperty("--toggle-track-bg", "#3a3c4d");
-  } else {
-    root.setProperty("--panel-bg", "#eaeaec");
-    root.setProperty("--panel-inner", "#dcdce0");
-    root.setProperty("--text-dark", "#14151f");
-    root.setProperty("--text-muted", "#4b4d63");
-    root.setProperty("--text-faint", "#83849a");
-    root.setProperty("--border", "#cfcfd6");
-    root.setProperty("--toggle-track-bg", "#c7c7cd");
-  }
-  document.body.classList.toggle("dark-mode", isDark);
-
-  try {
-    const raw = window.localStorage.getItem("schoolagy_appearance");
-    const saved = raw ? JSON.parse(raw) : null;
-    if (saved && saved.accent) {
-      root.setProperty("--accent", saved.accent);
-      root.setProperty("--accent-dark", saved.accentDark || darkenHex(saved.accent, 0.22));
-    }
-    if (saved && saved.background) {
-      if (saved.background === "white") {
-        setPageBackground("none", "#f4f4f6", "light");
-      } else if (saved.background === "black") {
-        setPageBackground("none", "#0c0c0e", "dark");
-      } else {
-        // A wallpaper image. Its average brightness is unknown, so the browser
-        // UI follows the dark-mode preference rather than guessing.
-        setPageBackground(`url("${saved.background}")`, "", isDark ? "dark" : "light");
-      }
-    } else {
-      // Nothing saved: the page's own CSS default (the near-black #0c0c0e) is
-      // what's showing, so tell the browser that's what it's theming against.
-      setPageBackground(null, null, "dark");
-    }
-  } catch {
-    // Malformed JSON or private browsing — the page's own default look
-    // stands, same as every per-page copy of this same read already does.
-  }
+function reapplyStoredTheme(): void {
+  (window as unknown as { __schoolagyApplyTheme?: () => void }).__schoolagyApplyTheme?.();
 }
 
 /**
@@ -156,9 +30,15 @@ function applyStoredTheme(): void {
  *
  * Two ordering rules make that work:
  *
- *   1. NOTHING renders until the API has confirmed this visitor may see it.
- *      The page's markup is not painted for a signed-out visitor at all — no
- *      flash of content, and no way to see a page by typing its URL.
+ *   1. NO DATA renders until the API has confirmed this visitor may see it.
+ *      The empty structure does paint first — that is the whole point of the
+ *      skeleton — but every container it contains ships empty in pages-src and
+ *      is filled by the page's own script, which only runs once `getSession()`
+ *      has come back. A signed-out visitor who types a URL gets a shimmering
+ *      shell and an immediate redirect, never a row of anybody's grades.
+ *      (An earlier version of this comment claimed the markup didn't paint at
+ *      all. It hasn't been true since the markup started mounting immediately,
+ *      and it was worth correcting rather than trusting.)
  *   2. `window.__SCHOOLAGY__` (real data) and `window.__schoolagyScanImage`
  *      (the NSFW check) exist BEFORE the page's script runs, since it reads
  *      them synchronously at top level.
@@ -214,15 +94,14 @@ export default function LegacyPage({
   const [mode, setMode] = useState<Mode>("out");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // Applies the user's saved dark-mode/accent/background before the browser
-  // paints (see applyStoredTheme's own comment above) — every route that
-  // requires auth, not just the 3 pages that used to duplicate this
-  // themselves. Login manages its own fixed look and isn't included.
-  useLayoutEffect(() => {
+  // The theme is already on screen by now — layout.tsx's boot script applied
+  // it before the first paint. This only keeps it in step when the setting is
+  // changed in ANOTHER tab. Login manages its own fixed look and isn't
+  // included.
+  useEffect(() => {
     if (!requiresAuth) return;
-    applyStoredTheme();
     function onStorage(e: StorageEvent) {
-      if (e.key === "schoolagy_dark_mode" || e.key === "schoolagy_appearance") applyStoredTheme();
+      if (e.key === "schoolagy_dark_mode" || e.key === "schoolagy_appearance") reapplyStoredTheme();
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -332,12 +211,36 @@ export default function LegacyPage({
     };
   }, []);
 
-  useEffect(() => {
+  /**
+   * A layout effect, not a plain one, and that matters.
+   *
+   * When `phase` flips to "ready" React swaps the mounted HTML from the
+   * skeleton version to the real one (see `mountedHtml` below), which leaves
+   * every data container momentarily EMPTY — the page's script is what fills
+   * them. A passive effect is not guaranteed to run before the next paint, so
+   * on a slow frame the user would see the skeleton blink out and the page sit
+   * hollow before the rows appeared. React runs layout effects synchronously
+   * after the DOM update and before the browser paints, which closes that gap
+   * by construction rather than by luck.
+   */
+  useLayoutEffect(() => {
     if (phase !== "ready" || !containerRef.current) return;
 
     const script = document.createElement("script");
     script.text = scriptJs;
     document.body.appendChild(script);
+
+    /**
+     * Hand-off from skeleton to content (2026-09-16).
+     *
+     * Appending the script above runs it synchronously, so by this line every
+     * container the skeleton was holding is already full of real rows — they
+     * just haven't been painted yet. Tagging them here, in the same frame,
+     * means the browser paints them already mid-animation; a frame later and
+     * you'd see them pop in at full opacity first and then fade, which is
+     * worse than no animation at all.
+     */
+    revealContent(containerRef.current, pageId);
 
     // Warm the model only where an upload is possible, and only after the page
     // is interactive, so a multi-megabyte download never competes with paint.
@@ -353,30 +256,40 @@ export default function LegacyPage({
       script.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, scriptJs, hasUploads]);
+  }, [phase, scriptJs, hasUploads, pageId]);
 
   /**
    * Loading state, reworked 2026-09-16.
    *
-   * It used to return a completely separate tree here — a hand-drawn
-   * approximation of the whole page — and only mount the real markup once the
-   * fetch resolved. That meant every heading, column title and nav item was a
-   * grey box, and the approximations drifted from the real pages.
+   * Two earlier versions, and why neither was right:
    *
-   * Now the real markup mounts immediately and shimmer rows are injected only
-   * into the containers the page's own script fills (see PageSkeleton.tsx).
-   * Real chrome from the first frame, no second version of each page to keep
-   * in sync, and nothing moves when the data lands because the placeholders
-   * are sitting in the real containers using the real classes.
+   *   1. A hand-drawn stand-in for the whole page, mounted instead of the real
+   *      markup. Every heading, column title and nav item was a grey box, and
+   *      the drawings drifted from the pages they were imitating.
+   *   2. The real markup mounted immediately with shimmer rows pushed into its
+   *      data containers by a layout effect. Right shape, wrong timing: a
+   *      layout effect only runs once React hydrates, and the server-rendered
+   *      HTML is on screen before that — so the first frame was the real card
+   *      with real column headings and nothing at all inside it.
+   *
+   * Now the skeleton is part of the HTML itself. `skeletonHtml` puts the
+   * shimmer rows into the markup as a string, so what the server sends already
+   * contains them and the very first painted frame is structure-plus-
+   * placeholders, with no JavaScript needed to get there. When the fetch
+   * resolves this flips to the untouched markup and the page's own script
+   * fills it in the same frame (the layout effect above).
+   *
+   * Nothing moves across that swap: the placeholders sit in the real
+   * containers using the real class names, so they already occupy the size and
+   * position the data will.
    *
    * Safe because every data container in pages-src ships empty — so this shows
    * genuine structure with holes, never a stranger's sample grades.
    */
-  useLayoutEffect(() => {
-    const root = containerRef.current;
-    if (!root || phase === "ready") return;
-    return injectSkeleton(root, pageId);
-  }, [phase, pageId]);
+  const mountedHtml = useMemo(
+    () => (phase === "ready" ? bodyHtml : skeletonHtml(bodyHtml, pageId)),
+    [phase, bodyHtml, pageId]
+  );
 
   return (
     <>
@@ -442,7 +355,7 @@ export default function LegacyPage({
         ref={containerRef}
         id="legacy-root"
         style={{ display: "contents" }}
-        dangerouslySetInnerHTML={{ __html: bodyHtml }}
+        dangerouslySetInnerHTML={{ __html: mountedHtml }}
       />
     </>
   );

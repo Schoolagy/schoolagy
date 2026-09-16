@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { THEME_BOOT_JS } from "./lib/theme-boot";
 
 export const metadata: Metadata = {
   title: "Schoolagy",
@@ -47,7 +48,17 @@ export default function RootLayout({
         html/body themselves (verified), so letting their CSS own the body box
         is both correct and less code.
       */}
-      <body>{children}</body>
+      <body>
+        {/*
+          Must stay the first thing in <body>, and must stay synchronous.
+          It applies the saved dark-mode/accent/background before the markup
+          below it is even parsed, which is the only way to be sure the first
+          painted frame is already in the user's colours rather than flipping
+          to them once React hydrates. See app/lib/theme-boot.ts.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_JS }} />
+        {children}
+      </body>
     </html>
   );
 }
