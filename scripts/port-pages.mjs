@@ -451,6 +451,7 @@ export default function Page() {${loginEffect}
       bodyHtml={BODY_HTML}
       scriptJs={SCRIPT_JS}
       requiresAuth={${!isLogin}}
+      usesSavedTheme={${!isLogin}}
       hasUploads={${UPLOAD_PAGES.has(name)}}
       externalScripts={${JSON.stringify(EXTERNAL_SCRIPTS[name] || [])}}
       pageId={${JSON.stringify(name)}}

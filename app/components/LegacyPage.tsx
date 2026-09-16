@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getSession, loadBundle, signOut, type Mode } from "../lib/schoolagy";
 import { installNsfwGlobal, preloadNsfwModel } from "../lib/nsfw";
 import { SKELETON_CSS, skeletonHtml, revealContent } from "./PageSkeleton";
+import { THEME_BOOT_JS } from "../lib/theme-boot";
 
 /**
  * Re-applies the saved theme when ANOTHER tab changes it.
@@ -49,6 +50,7 @@ export default function LegacyPage({
   bodyHtml,
   scriptJs,
   requiresAuth = true,
+  usesSavedTheme = true,
   hasUploads = false,
   externalScripts = [],
   pageId,
@@ -59,6 +61,30 @@ export default function LegacyPage({
   scriptJs: string;
   /** Login is the one page reachable while signed out. */
   requiresAuth?: boolean;
+  /**
+   * Whether this page wears the signed-in user's saved dark-mode, accent and
+   * background. True for every page but Login.
+   *
+   * Login has a fixed look of its own — the blue gradient, its own `--accent`
+   * — and is the page you land on *after signing out*, so wearing the theme of
+   * the account you just left is exactly wrong. Martin: "on the login screen
+   * when you log out can you reset the background back to the default one and
+   * not the last selected/uploaded one".
+   *
+   * This is a separate flag from `requiresAuth` and not a synonym for it. The
+   * 404 page is also reachable signed out, but it is a page *inside* the app's
+   * look — its own CSS comment says the neutral black it ships is only what
+   * shows "before … the user's actual saved background" lands over it. So it
+   * keeps the theme; only Login opts out.
+   *
+   * Nothing is erased when this is false: the saved appearance stays in
+   * localStorage and comes back the moment you sign in again. It is
+   * deliberately not cleared on sign-out — Sync Across Devices is opt-in and
+   * defaults to OFF, so for most people localStorage is the ONLY copy of their
+   * theme, and clearing it would mean losing a wallpaper for good every time
+   * they signed out.
+   */
+  usesSavedTheme?: boolean;
   /**
    * Whether this page can upload images (onboarding and settings can).
    * Only those pages warm the NSFW model — TensorFlow.js plus the weights is
@@ -94,18 +120,17 @@ export default function LegacyPage({
   const [mode, setMode] = useState<Mode>("out");
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // The theme is already on screen by now — layout.tsx's boot script applied
-  // it before the first paint. This only keeps it in step when the setting is
-  // changed in ANOTHER tab. Login manages its own fixed look and isn't
-  // included.
+  // The theme is already on screen by now — the boot script rendered at the
+  // top of this component's output applied it before the first paint. This
+  // only keeps it in step when the setting is changed in ANOTHER tab.
   useEffect(() => {
-    if (!requiresAuth) return;
+    if (!usesSavedTheme) return;
     function onStorage(e: StorageEvent) {
       if (e.key === "schoolagy_dark_mode" || e.key === "schoolagy_appearance") reapplyStoredTheme();
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [requiresAuth]);
+  }, [usesSavedTheme]);
 
   useEffect(() => {
     document.title = title;
@@ -293,6 +318,21 @@ export default function LegacyPage({
 
   return (
     <>
+      {/*
+        The saved dark-mode/accent/background, applied before the browser
+        paints. Must stay FIRST in this output and must stay synchronous: an
+        inline script blocks parsing where it sits, so everything below it —
+        the page CSS, the markup — is parsed and painted with the theme
+        already in place. See app/lib/theme-boot.ts.
+
+        It lives here rather than in app/layout.tsx (where it was first put,
+        on 2026-09-16) for one reason: the root layout is the same for every
+        route and cannot tell which page it is wrapping, so from there it also
+        themed Login — which meant signing out dropped you on a login screen
+        still wearing the wallpaper of the account you had just left. This
+        component knows, because the page tells it.
+      */}
+      {usesSavedTheme && <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_JS }} />}
       <style dangerouslySetInnerHTML={{ __html: styleCss }} />
       <style dangerouslySetInnerHTML={{ __html: SKELETON_CSS }} />
       {mode === "demo" && !bannerDismissed && (

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { THEME_BOOT_JS } from "./lib/theme-boot";
 
 export const metadata: Metadata = {
   title: "Schoolagy",
@@ -48,17 +47,22 @@ export default function RootLayout({
         html/body themselves (verified), so letting their CSS own the body box
         is both correct and less code.
       */}
-      <body>
-        {/*
-          Must stay the first thing in <body>, and must stay synchronous.
-          It applies the saved dark-mode/accent/background before the markup
-          below it is even parsed, which is the only way to be sure the first
-          painted frame is already in the user's colours rather than flipping
-          to them once React hydrates. See app/lib/theme-boot.ts.
-        */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_JS }} />
-        {children}
-      </body>
+      {/*
+        The theme boot script is NOT here, deliberately.
+
+        It was, briefly, on 2026-09-16 — which is the earliest point in the
+        document and therefore the obvious place for a no-flash script. But
+        this layout wraps every route identically and has no idea which page
+        it is rendering, so from here it also applied the saved wallpaper to
+        the Login screen: sign out, and you landed on a login page still
+        wearing the theme of the account you had just left.
+
+        It now renders as the first thing in LegacyPage's own output, gated on
+        that page's `usesSavedTheme`. Still inside <body>, still synchronous,
+        still ahead of the page's CSS and markup — so it still lands in the
+        first painted frame — but only on the pages that should wear it.
+      */}
+      <body>{children}</body>
     </html>
   );
 }
