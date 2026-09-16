@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Assignments</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from the other
+     top-level pages (home.html/courses.html) so this reads as the same
+     app. See architecture-decisions.md re: promoting this to an actual
+     shared stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Declared so the browser themes ITS OWN chrome — scrollbars, the
+
+     overscroll gutter, form controls — against this page rather than
+
+     guessing. Without it Firefox drew a light-theme scrollbar over the
+
+     dark canvas and tinted it (Martin saw it as pink on a blue
+
+     background). LegacyPage's applyStoredTheme() updates both of these
+
+     to match whatever background the user actually saved. */
+
+  html {
+
+    color-scheme: dark;
+
+    background-color: #0c0c0e;
+
+  }
+
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    /* Neutral black instead of a baked-in accent gradient here —
+       2026-09-11, per Martin. This is only ever visible for a split
+       second on reload/navigation, before applyStoredTheme() (or this
+       page's own appearance-reading script) sets the user's actual
+       saved background over it. The old default was the sample
+       red-orange gradient baked into this file, which read as a real
+       glitch flashing in between pages; a neutral black reads as
+       "still loading" instead, and matches the app's own Black
+       preset (#0c0c0e) so it's not a color that appears nowhere else
+       in the app. */
+    background-color: #0c0c0e;
+    background-image: none;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 100px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 980px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- .card grows to
+      its natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 2px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- One card, same as every other page ---------- */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    padding: 6px;
+  }
+  .card-inner {
+    padding: 22px 24px 20px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .section-head h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  .assign-total {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-faint);
+  }
+
+  /* ---------- Filter pills — same component as course-home.html's
+     Assignment List widget, except the active state uses --accent
+     rather than --course-color: this page spans all six courses, so
+     there's no single course color to key off of. ---------- */
+  .assign-filters { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 6px; }
+  .assign-filter {
+    background: var(--panel-inner);
+    border: none;
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .assign-filter:hover { color: var(--text-dark); }
+  .assign-filter.active { background: var(--accent); color: #fff; }
+  .assign-filter:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  /* Class filter — a dropdown among the status pills above, added
+     2026-09-03 (per Martin: "on the all assignments we should just add a
+     class filter dropdown ... same shape and color as the other filters
+     but will have a down arrow, which when selected will be the accent
+     color until they reset it"). Same pill shape/background/type scale
+     as .assign-filter, plus a chevron to read as a dropdown rather than
+     a toggle, and the same active-state accent fill the status pills
+     use, applied for as long as a specific class (not "All Classes")
+     stays selected. **Position (2026-09-03 follow-up, per Martin)**: sits
+     right after "All" by default — a real DOM position (not just visual,
+     so tab order matches what's on screen — see the JS's
+     `moveClassFilterWrap()`), moving to the end of the row (after Graded)
+     with a FLIP-animated slide while a class stays selected, and back
+     next to "All" the moment it's reset. **Rebuilt as a custom dropdown
+     (2026-09-03, second follow-up, per Martin: "can you make a custom
+     dropdown for selecting a class to filter by")**: was a native
+     `<select>` at first — swapped for a real button + floating listbox
+     panel (the same open/close/outside-click/Escape convention this
+     page's own profile menu already uses, just role="listbox" instead of
+     role="menu"), so the option list can carry each course's own color
+     dot and match the app's own visual language instead of the browser's
+     native dropdown chrome. Still fully keyboard-operable (a real
+     `<button>` plus real `<button role="option">` rows, not a `<div>`
+     stack), just no longer a native form control. */
+  .assign-filter-select-wrap { position: relative; display: inline-flex; }
+  .assign-filter-select-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--panel-inner);
+    border: none;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-family: inherit;
+    font-weight: 800;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .assign-filter-select-wrap:not(.active) .assign-filter-select-btn:hover { color: var(--text-dark); }
+  .assign-filter-select-wrap.active .assign-filter-select-btn { background: var(--accent); color: #fff; }
+  .assign-filter-select-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .assign-filter-arrow { width: 8px; height: 8px; flex-shrink: 0; color: inherit; }
+
+  .assign-class-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 170px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0, 0, 0, 0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .assign-class-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--text-dark);
+    padding: 8px 10px;
+    cursor: pointer;
+  }
+  .assign-class-option:hover, .assign-class-option.selected { background: var(--panel-inner); }
+  .assign-class-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .assign-group-label { font-size: 0.66rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); margin: 16px 0 2px; }
+  .assign-group-label:first-child { margin-top: 0; }
+
+  /* ---------- Assignment row — the draft PDF's row shape (bold-italic
+     class name on top, a lighter assignment-title line beneath) laid
+     over the status-tick/due-date component every other Assignment
+     List already uses, so this page matches both the draft and the
+     rest of the app. Course color comes in per-row via a custom
+     property, since (unlike course-home.html) this page isn't scoped
+     to one course's --course-color. **Divider removed, padding grows
+     when unfiltered (2026-09-03, per Martin)**: the `border-bottom`
+     divider between rows is gone — rows are separated by spacing alone
+     now, not a rule line. That freed-up padding grew to compensate
+     (10px → 16px) for the default "All Classes" view; the class-filtered
+     state below dials it back down, since that view's rows carry less
+     visual weight (course name shrinks to a small caption) and don't
+     need as much breathing room. ---------- */
+  .assign-row { display: flex; align-items: flex-start; gap: 10px; padding: 16px 0; }
+  #assignListBody.class-filtered .assign-row { padding: 10px 0; }
+  .assign-tick { width: 4px; align-self: stretch; min-height: 40px; border-radius: 999px; flex-shrink: 0; background: var(--text-faint); }
+  .assign-row.overdue .assign-tick { background: var(--grade-bad); }
+  .assign-row.graded .assign-tick { background: var(--grade-good); }
+  .assign-row.upcoming .assign-tick { background: var(--row-course-color, var(--accent)); }
+  .assign-row.submitted .assign-tick { background: var(--grade-mid); }
+  .assign-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .assign-course { order: 0; font-weight: 800; font-style: italic; font-size: 0.86rem; margin: 0; letter-spacing: -0.005em; }
+  .assign-title { order: 1; font-weight: 500; font-size: 0.82rem; color: var(--text-muted); margin: 2px 0 0; }
+  .assign-meta { order: 2; font-size: 0.68rem; color: var(--text-faint); margin: 3px 0 0; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 800; }
+
+  /* Class-filtered typography swap (2026-09-03, per Martin: "the name of
+     the assignment should get bigger and the course name get smaller and
+     move to the bottom") — every row already shows the same one class
+     once a class filter is active, so the course name stops earning top
+     billing: the assignment title takes over as the bold headline, and
+     the course name demotes to a small caption below the type label.
+     `.assign-text` is a column flexbox specifically so this can reorder
+     via `order` alone — no DOM changes needed between the two states. */
+  #assignListBody.class-filtered .assign-title { order: 0; font-size: 0.98rem; font-weight: 800; color: var(--text-dark); margin: 0; }
+  #assignListBody.class-filtered .assign-meta { order: 1; margin: 3px 0 0; }
+  #assignListBody.class-filtered .assign-course { order: 2; font-size: 0.66rem; font-weight: 700; margin: 4px 0 0; }
+  .assign-due { font-size: 0.72rem; font-weight: 700; color: var(--text-faint); white-space: nowrap; text-align: right; flex-shrink: 0; padding-top: 1px; }
+  .assign-row.overdue .assign-due { color: var(--grade-bad); }
+  .assign-row.graded .assign-due { color: var(--grade-good); }
+  .assign-row.submitted .assign-due { color: var(--grade-mid); }
+  .assign-empty { font-size: 0.8rem; color: var(--text-faint); font-style: italic; padding: 10px 0; }
+
+  /* Rows are clickable — each opens its own assignment.html detail
+     page (2026-08-29, per Martin's singular-assignment draft). */
+  .assign-row { cursor: pointer; border-radius: var(--window-radius-sm); }
+  .assign-row:hover { background: var(--panel-inner); }
+  .assign-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) inset; }
+
+  /* ---------- Bottom nav — verbatim from every other page ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+  @media (max-width: 520px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Assignments</h1>
+        <p class="subtitle" id="assignSub"></p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-inner">
+        <div class="section-head">
+          <h2>All Assignments</h2>
+          <span class="assign-total" id="assignTotal"></span>
+        </div>
+        <div class="assign-filters" id="assignFilters">
+          <button class="assign-filter active" type="button" data-filter="all">All</button>
+          <span class="assign-filter-select-wrap" id="classFilterWrap">
+            <button class="assign-filter-select-btn" id="classFilterBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span id="classFilterLabel">All Classes</span>
+              <svg class="assign-filter-arrow" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div class="assign-class-menu" id="classFilterMenu" role="listbox" aria-label="Filter by class" hidden>
+              <button class="assign-class-option selected" type="button" role="option" aria-selected="true" data-course="">All Classes</button>
+            </div>
+          </span>
+          <button class="assign-filter" type="button" data-filter="overdue">Missing</button>
+          <button class="assign-filter" type="button" data-filter="upcoming">Upcoming</button>
+          <button class="assign-filter" type="button" data-filter="submitted">Submitted</button>
+          <button class="assign-filter" type="button" data-filter="graded">Graded</button>
+        </div>
+        <div id="assignListBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner" id="dock">
+      <button class="nav-link" type="button" data-page="home" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="courses" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-page="assignments">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="contacts" data-href="contacts.html">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
+    // Sample data — same six courses/colors as home.html and
+    // courses.html (id/name/color only; this page doesn't need the
+    // course-code/period fields courses.html's table shows), and the
+    // same OVERDUE/UPCOMING/HISTORY values course-home.html's
+    // Assignment List uses, so a given assignment reads identically no
+    // matter which page it's viewed from.
+    // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // Course customization persistence — added 2026-09-08. Renaming,
+    // recoloring, or reordering a course (in home.html's Customize editor
+    // or courses.html's Reorder tool — the only places that WRITE these)
+    // used to be invisible everywhere else, since every page just
+    // re-generated its own hardcoded COURSES array from scratch on load.
+    // schoolagy_course_custom holds per-course name/color overrides
+    // (object keyed by course id, only actually-customized courses
+    // present); schoolagy_course_order holds a full custom ordering of
+    // course ids (array), written only once the user has actually
+    // reordered. This page only READS both — applyCourseCustomizationsInPlace()
+    // is called right after the raw array literal below, mutating COURSES
+    // in place, so it's already the customized/reordered version before
+    // anything on this page ever renders it. Same defensive
+    // try/catch-per-key style as SCHOOLAGY_DARK_MODE_KEY in settings.html.
+    // ------------------------------------------------------------------
+    const SCHOOLAGY_COURSE_CUSTOM_KEY = 'schoolagy_course_custom';
+    const SCHOOLAGY_COURSE_ORDER_KEY = 'schoolagy_course_order';
+    function loadCourseCustom() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_CUSTOM_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return {};
+    }
+    function loadCourseOrder() {
+      try {
+        const raw = localStorage.getItem(SCHOOLAGY_COURSE_ORDER_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      return null;
+    }
+    function applyCourseCustomizationsInPlace(courses) {
+      const custom = loadCourseCustom();
+      // Mutates each course object's own fields in place (never clones,
+      // never reassigns `courses` itself) so the `const COURSES = [...]`
+      // literal a few lines below stays exactly that — a literal array —
+      // for scripts/port-pages.mjs's data-overrides transform to match
+      // and rewrite for live Schoology data. This function only edits
+      // the array's contents/order after that binding already exists.
+      courses.forEach(c => Object.assign(c, custom[c.id] || {}));
+      const order = loadCourseOrder();
+      if (order && order.length) {
+        const byId = new Map(courses.map(c => [c.id, c]));
+        const ordered = order.filter(id => byId.has(id)).map(id => byId.get(id));
+        // A course not present in the saved order (e.g. added to the demo
+        // data after the order was saved) still shows up, just appended.
+        courses.forEach(c => { if (!order.includes(c.id)) ordered.push(c); });
+        courses.splice(0, courses.length, ...ordered);
+      }
+    }
+    const COURSES = [
+      { id: 'apchem', name: 'AP Chemistry', color: '#a67a22' },
+      { id: 'algebra2', name: 'Algebra II', color: '#5b6ea3' },
+      { id: 'english10', name: 'English 10', color: '#6b8f5e' },
+      { id: 'ushistory', name: 'U.S. History', color: '#a15c4f' },
+      { id: 'spanish3', name: 'Spanish III', color: '#8a6ba1' },
+      { id: 'pe', name: 'PE', color: '#4f8c8a' },
+    ];
+    applyCourseCustomizationsInPlace(COURSES);
+    function findCourse(id) { return COURSES.find(c => c.id === id); }
+
+    /* Course names, colors and assignment titles/due dates all come from
+       whatever the teacher typed into Schoology, so dropping them straight
+       into innerHTML lets a title like `<img src=x onerror=...>` run in this
+       app's own origin — everything data-derived below goes through here
+       first. String() rather than assuming a string, since scores arrive as
+       numbers. Do NOT wrap values that are themselves markup (assignRowHTML's
+       own output, TYPE_LABEL's literals). Verified by verify/xss-test.mjs. */
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+      ));
+    }
+
+    const TYPE_LABEL = { assignment: 'Assignment', discussion: 'Discussion', assessment: 'Quiz' };
+
+    const HISTORY = {
+      apchem: { points: [72, 79, 84, 88, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Intro Lab Safety Quiz', 'assessment'], ['Stoichiometry Problem Set', 'assignment'], ['Molarity Discussion', 'discussion'], ['Gas Laws Test', 'assessment'], ['Lab Report #3', 'assignment']] },
+      algebra2: { points: [94, 96, 93, 97, 95], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'], titles: [['Warm-Up Quiz 1', 'assessment'], ['Systems of Equations HW', 'assignment'], ['Factoring Discussion', 'discussion'], ['Unit 1 Test', 'assessment'], ['Practice Set 6', 'assignment']] },
+      english10: { points: [88, 82, 79, 76, 73], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Reading Journal 1', 'assignment'], ['Vocabulary Quiz', 'assessment'], ['Chapter 3 Discussion', 'discussion'], ['Essay Draft', 'assignment'], ['Grammar Check', 'assessment']] },
+      ushistory: { points: [89, 93, 88, 92, 90], dates: ['Aug 4', 'Aug 8', 'Aug 12', 'Aug 18', 'Aug 24'], titles: [['Colonial Era Notes', 'assignment'], ['Primary Source Quiz', 'assessment'], ['Revolution Discussion', 'discussion'], ['Timeline Project', 'assignment'], ['Unit 1 Exam', 'assessment']] },
+      spanish3: { points: [76, 80, 83, 85, 87], dates: ['Aug 3', 'Aug 7', 'Aug 11', 'Aug 17', 'Aug 23'], titles: [['Vocabulario Quiz', 'assessment'], ['Conjugación Practice', 'assignment'], ['Conversación Discussion', 'discussion'], ['Listening Check', 'assessment'], ['Composición 1', 'assignment']] },
+      pe: { points: [96, 98, 95, 97, 96], dates: ['Aug 2', 'Aug 6', 'Aug 10', 'Aug 16', 'Aug 22'], titles: [['Fitness Log 1', 'assignment'], ['Rules Quiz', 'assessment'], ['Team Strategy Discussion', 'discussion'], ['Skills Check', 'assessment'], ['Fitness Log 2', 'assignment']] },
+    };
+
+    const OVERDUE = [
+      { type: 'assignment', title: 'Lab Report #4', courseId: 'apchem', due: 'Fri Aug 21' },
+      { type: 'discussion', title: 'Chapter 6 Discussion', courseId: 'english10', due: 'Thu Aug 20' },
+      { type: 'discussion', title: 'Reading Response', courseId: 'ushistory', due: 'Wed Aug 19' },
+    ];
+    const UPCOMING = [
+      { type: 'assessment', title: 'Unit 2 Quiz', courseId: 'algebra2', due: 'Mon Aug 24' },
+      { type: 'assignment', title: 'Vocab Worksheet', courseId: 'spanish3', due: 'Tue Aug 25' },
+      { type: 'assignment', title: 'Problem Set 7', courseId: 'algebra2', due: 'Wed Aug 26' },
+      { type: 'assignment', title: 'Titration Lab Prep', courseId: 'apchem', due: 'Mon Aug 24' },
+    ];
+    // Recently Submitted — turned in but not graded yet, sitting between
+    // Upcoming and Graded in the assignment lifecycle (added 2026-08-29,
+    // per Martin's request). Same values assignment.html reads for its
+    // own lookup, so a submitted item matches wherever it's viewed.
+    const SUBMITTED = [
+      { type: 'assignment', title: 'Molarity Practice Set', courseId: 'apchem', submittedOn: 'Sat Aug 22' },
+      { type: 'assessment', title: 'Quiz Corrections', courseId: 'algebra2', submittedOn: 'Sun Aug 23' },
+      { type: 'assignment', title: 'Composición 2', courseId: 'spanish3', submittedOn: 'Fri Aug 21' },
+    ];
+
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    function fmtAug(day) { return `${DOW[new Date(2026, 7, day).getDay()]} Aug ${day}`; }
+    function dayNum(dateStr) { const parts = dateStr.trim().split(/\s+/); return parseInt(parts[parts.length - 1], 10); }
+
+    // ------------------------------------------------------------------
+    // Build the three item lists across all six courses. Graded items
+    // come from HISTORY (one entry per course per score); Missing/
+    // Upcoming come straight from OVERDUE/UPCOMING. Every item ends up
+    // with a normalized {status, type, title, courseId, day, due,
+    // score?} shape — the same fields assignRowHTML() below expects,
+    // whichever list it came from.
+    // ------------------------------------------------------------------
+    const overdueItems = OVERDUE
+      .map(o => ({ status: 'overdue', type: o.type, title: o.title, courseId: o.courseId, day: dayNum(o.due), due: o.due }))
+      .sort((a, b) => a.day - b.day);
+    const upcomingItems = UPCOMING
+      .map(u => ({ status: 'upcoming', type: u.type, title: u.title, courseId: u.courseId, day: dayNum(u.due), due: u.due }))
+      .sort((a, b) => a.day - b.day);
+    const submittedItems = SUBMITTED
+      .map(s => ({ status: 'submitted', type: s.type, title: s.title, courseId: s.courseId, day: dayNum(s.submittedOn), due: s.submittedOn }))
+      .sort((a, b) => b.day - a.day);
+    const gradedItems = [];
+    COURSES.forEach(course => {
+      const hist = HISTORY[course.id];
+      hist.dates.forEach((d, i) => {
+        const day = dayNum(d);
+        gradedItems.push({ status: 'graded', type: hist.titles[i][1], title: hist.titles[i][0], courseId: course.id, day, due: fmtAug(day), score: hist.points[i] });
+      });
+    });
+    gradedItems.sort((a, b) => b.day - a.day);
+    // "All" tab shows a trimmed recent slice of Graded (30 graded items
+    // across six courses is too many to dump into a combined view) —
+    // the dedicated Graded tab below still shows every one.
+    const gradedRecent = gradedItems.slice(0, 8);
+
+    function assignRowHTML(item) {
+      const course = findCourse(item.courseId);
+      const dueText = item.status === 'graded' ? `Graded · ${item.score}%`
+        : item.status === 'overdue' ? `Missing · ${item.due}`
+        : item.status === 'submitted' ? `Submitted · ${item.due}`
+        : `Due ${item.due}`;
+      const dest = `assignment.html?course=${encodeURIComponent(item.courseId)}&title=${encodeURIComponent(item.title)}`;
+      return `
+        <div class="assign-row ${escapeHtml(item.status)}" style="--row-course-color: ${escapeHtml(course.color)}" role="link" tabindex="0" data-href="${escapeHtml(dest)}" aria-label="${escapeHtml(item.title)}, ${escapeHtml(course.name)}">
+          <span class="assign-tick"></span>
+          <div class="assign-text">
+            <p class="assign-course" style="color: ${escapeHtml(course.color)}">${escapeHtml(course.name)}</p>
+            <p class="assign-title">${escapeHtml(item.title)}</p>
+            <p class="assign-meta">${TYPE_LABEL[item.type]}</p>
+          </div>
+          <span class="assign-due">${escapeHtml(dueText)}</span>
+        </div>`;
+    }
+
+    function assignGroupHTML(label, items) {
+      if (!items.length) return '';
+      return `<p class="assign-group-label">${label}</p>` + items.map(assignRowHTML).join('');
+    }
+
+    // Class filter (added 2026-09-03) — narrows every status tab down to
+    // one course, on top of whichever status filter is already active;
+    // '' (the "All Classes" option) means no narrowing. Kept as its own
+    // variable rather than baked into the four *Items arrays above, since
+    // those are computed once at load and this needs to re-filter on
+    // every dropdown change without losing the original full lists.
+    let currentStatusFilter = 'all';
+    let selectedCourseId = '';
+
+    function renderAssignList(filter) {
+      const body = document.getElementById('assignListBody');
+      const byCourse = arr => selectedCourseId ? arr.filter(i => i.courseId === selectedCourseId) : arr;
+      const overdue = byCourse(overdueItems);
+      const upcoming = byCourse(upcomingItems);
+      const submitted = byCourse(submittedItems);
+      const graded = byCourse(gradedItems);
+      const gradedR = byCourse(gradedRecent);
+      let html = '';
+      if (filter === 'all') {
+        html = assignGroupHTML('Missing', overdue) + assignGroupHTML('Upcoming', upcoming) + assignGroupHTML('Recently Submitted', submitted) + assignGroupHTML('Recently Graded', gradedR);
+      } else if (filter === 'overdue') {
+        html = overdue.map(assignRowHTML).join('');
+      } else if (filter === 'upcoming') {
+        html = upcoming.map(assignRowHTML).join('');
+      } else if (filter === 'submitted') {
+        html = submitted.map(assignRowHTML).join('');
+      } else if (filter === 'graded') {
+        html = graded.map(assignRowHTML).join('');
+      }
+      body.innerHTML = html || '<p class="assign-empty">Nothing here yet.</p>';
+    }
+    renderAssignList('all');
+
+    document.getElementById('assignFilters').addEventListener('click', e => {
+      const btn = e.target.closest('.assign-filter');
+      if (!btn) return;
+      document.querySelectorAll('.assign-filter').forEach(b => b.classList.toggle('active', b === btn));
+      currentStatusFilter = btn.dataset.filter;
+      renderAssignList(currentStatusFilter);
+    });
+
+    // Class filter — a custom dropdown (2026-09-03, replacing an earlier
+    // native <select> per Martin: "can you make a custom dropdown for
+    // selecting a class to filter by") built the same way this page's
+    // own profile menu already is: a button that toggles a floating
+    // panel, closed on an outside click or Escape. Options are built
+    // from the same COURSES list every other lookup on this page already
+    // uses, so there's no second hardcoded class list to drift out of
+    // sync, each with a small color dot matching that course's own
+    // identity color everywhere else in the app. Selecting a real class
+    // (anything but "All Classes") turns the pill the accent color,
+    // matching the status pills' own active state, and it stays that
+    // color until reset back to "All Classes".
+    const classFilterBtn = document.getElementById('classFilterBtn');
+    const classFilterLabel = document.getElementById('classFilterLabel');
+    const classFilterMenu = document.getElementById('classFilterMenu');
+    const classFilterWrap = document.getElementById('classFilterWrap');
+    COURSES.forEach(c => {
+      const opt = document.createElement('button');
+      opt.className = 'assign-class-option';
+      opt.type = 'button';
+      opt.setAttribute('role', 'option');
+      opt.setAttribute('aria-selected', 'false');
+      opt.dataset.course = c.id;
+      opt.innerHTML = `<span class="assign-class-dot" style="background:${escapeHtml(c.color)}"></span>${escapeHtml(c.name)}`;
+      classFilterMenu.appendChild(opt);
+    });
+    function openClassMenu() { classFilterMenu.hidden = false; classFilterBtn.setAttribute('aria-expanded', 'true'); }
+    function closeClassMenu() { classFilterMenu.hidden = true; classFilterBtn.setAttribute('aria-expanded', 'false'); }
+    classFilterBtn.addEventListener('click', () => { if (classFilterMenu.hidden) openClassMenu(); else closeClassMenu(); });
+    document.addEventListener('click', e => { if (!classFilterMenu.hidden && !e.target.closest('.assign-filter-select-wrap')) closeClassMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !classFilterMenu.hidden) { closeClassMenu(); classFilterBtn.focus(); } });
+
+    // Moves the class-filter pill between "right after All" (its resting
+    // spot) and "the far end of the row, after Graded" (2026-09-03, per
+    // Martin: "when a class is selected it moves to the far right in an
+    // animation"). A real DOM move (insertAdjacentElement/appendChild),
+    // not just a visual `order` shuffle, so keyboard tab order always
+    // matches what's on screen. Animated with a small FLIP (First, Last,
+    // Invert, Play): read the pill's position before the move, let the
+    // browser lay it out in its new spot, then animate a transform from
+    // the old position to the new one instead of letting it just snap.
+    const assignFiltersEl = document.getElementById('assignFilters');
+    const allFilterBtn = assignFiltersEl.querySelector('.assign-filter[data-filter="all"]');
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function moveClassFilterWrap(toEnd) {
+      const first = classFilterWrap.getBoundingClientRect();
+      if (toEnd) assignFiltersEl.appendChild(classFilterWrap);
+      else allFilterBtn.insertAdjacentElement('afterend', classFilterWrap);
+      if (prefersReducedMotion) return;
+      const last = classFilterWrap.getBoundingClientRect();
+      const dx = first.left - last.left;
+      const dy = first.top - last.top;
+      if (!dx && !dy) return;
+      classFilterWrap.style.transition = 'none';
+      classFilterWrap.style.transform = `translate(${dx}px, ${dy}px)`;
+      requestAnimationFrame(() => {
+        classFilterWrap.style.transition = 'transform 0.28s ease';
+        classFilterWrap.style.transform = '';
+      });
+      classFilterWrap.addEventListener('transitionend', () => { classFilterWrap.style.transition = ''; }, { once: true });
+    }
+
+    const assignListBodyEl = document.getElementById('assignListBody');
+    classFilterMenu.addEventListener('click', e => {
+      const opt = e.target.closest('.assign-class-option');
+      if (!opt) return;
+      selectedCourseId = opt.dataset.course;
+      classFilterLabel.textContent = opt.dataset.course ? COURSES.find(c => c.id === opt.dataset.course).name : 'All Classes';
+      classFilterMenu.querySelectorAll('.assign-class-option').forEach(o => {
+        const isSelected = o === opt;
+        o.classList.toggle('selected', isSelected);
+        o.setAttribute('aria-selected', String(isSelected));
+      });
+      classFilterWrap.classList.toggle('active', !!selectedCourseId);
+      assignListBodyEl.classList.toggle('class-filtered', !!selectedCourseId);
+      moveClassFilterWrap(!!selectedCourseId);
+      renderAssignList(currentStatusFilter);
+      closeClassMenu();
+    });
+
+    // Rows navigate to their own assignment detail page (2026-08-29) —
+    // delegated on the shared body container since renderAssignList()
+    // rebuilds its innerHTML on every filter change.
+    document.getElementById('assignListBody').addEventListener('click', e => {
+      const row = e.target.closest('.assign-row');
+      if (row) window.location.href = row.dataset.href;
+    });
+    document.getElementById('assignListBody').addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('.assign-row');
+      if (!row) return;
+      e.preventDefault();
+      window.location.href = row.dataset.href;
+    });
+
+    document.getElementById('assignTotal').textContent = `${overdueItems.length + upcomingItems.length + submittedItems.length + gradedItems.length} total`;
+    document.getElementById('assignSub').textContent = `${overdueItems.length} missing · ${upcomingItems.length} upcoming · ${submittedItems.length} submitted`;
+
+    // Nav — Home/Courses/Assignments are real links between real pages
+    // (same full-mesh convention course-home.html and
+    // course-materials.html already use); the rest stay visual-only
+    // placeholders until those pages exist.
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as every other page.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>
