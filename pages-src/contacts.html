@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schoolagy — Contacts</title>
+<link rel="stylesheet" href="https://use.typekit.net/gsk6off.css">
+<style>
+  /* ---------- Shared design system — copied verbatim from the other
+     top-level pages (home.html/courses.html/assignments.html) so this
+     reads as the same app. See architecture-decisions.md re: promoting
+     this to an actual shared stylesheet once there's a build step. ---------- */
+  :root {
+    --accent: #d94a2b;
+    --accent-dark: #a8331a;
+    --accent-ring: rgb(from var(--accent) r g b / 0.35);
+    --page-bg-start: #f17b53;
+    --page-bg-end: #930500;
+    --panel-bg: #eaeaec;
+    --panel-inner: #dcdce0;
+    --text-dark: #14151f;
+    --text-muted: #4b4d63;
+    --text-faint: #83849a;
+    --border: #cfcfd6;
+    --window-radius-lg: 22px;
+    --window-radius-md: 14px;
+    --window-radius-sm: 10px;
+    --grade-good: #2f7d54;
+    --grade-mid: #a67a22;
+    --grade-bad: #b6432f;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Scrollbars app-wide: a slim, permanently-visible, rounded gray bar
+     sitting slightly inset from the true edge of its scrollable area --
+     like a normal OS/Gmail-style scrollbar, not hidden and not
+     hover-gated. (An earlier hover-only version turned out unreliable:
+     the outer page counts as "hovered" almost the entire time you're
+     using it, so it either showed constantly or never, depending on the
+     browser -- not the meaningful hover signal it needed to be.)
+     Scrolling itself always works via wheel/trackpad/touch/keys either
+     way. One universal rule (the `*` selector) so it covers every
+     scrollable element automatically — the outer page scroll, every
+     popup/modal, every internal list — without repeating it per
+     element. (The bottom nav's own horizontal scroll strip is a
+     deliberate exception — see .app-nav-inner further down — that one
+     stays permanently hidden as a mobile overflow safety net.) */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(20, 21, 31, 0.28) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(20, 21, 31, 0.28);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box; /* the transparent border creates the
+      inset gap around the thumb, so it reads as sitting inside the
+      window rather than flush against the very edge */
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: rgba(20, 21, 31, 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    font-family: "puffin", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    height: 100vh; /* fixed, not min -- body itself no longer scrolls */
+    overflow: hidden; /* scrolling now happens inside .page (see below), so
+      the scrollbar sits at the edge of the app's own window/card instead of
+      out at the browser's outer edge, over the wallpaper margin */
+    /* Neutral black instead of a baked-in accent gradient here —
+       2026-09-11, per Martin. This is only ever visible for a split
+       second on reload/navigation, before applyStoredTheme() (or this
+       page's own appearance-reading script) sets the user's actual
+       saved background over it. The old default was the sample
+       red-orange gradient baked into this file, which read as a real
+       glitch flashing in between pages; a neutral black reads as
+       "still loading" instead, and matches the app's own Black
+       preset (#0c0c0e) so it's not a color that appears nowhere else
+       in the app. */
+    background-color: #0c0c0e;
+    background-image: none;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    padding: 40px 24px 100px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 980px;
+    align-self: stretch; /* fill body's available height regardless of
+      whatever align-items body declares, so there's a bounded box to
+      scroll within */
+    min-height: 0; /* flexbox gotcha: without this, a flex item won't
+      shrink below its content size, which breaks overflow scrolling */
+    overflow-y: auto; /* the actual scroll happens here -- .card grows to
+      its natural content height and .page scrolls as a whole */
+    overflow-x: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 0 4px 18px;
+  }
+
+  h1.title {
+    color: #ffffff;
+    font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+    font-weight: 900;
+    font-style: italic;
+    letter-spacing: -0.01em;
+    margin: 0;
+    transform: skewX(-2deg);
+    display: inline-block;
+  }
+  .subtitle {
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 2px 0 0 2px;
+  }
+
+  .profile-menu-wrap { position: relative; flex-shrink: 0; }
+  .profile-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.95rem;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .profile-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 160px;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    box-shadow: 0 20px 45px -16px rgba(0,0,0,0.5);
+    padding: 6px;
+    z-index: 25;
+  }
+  .profile-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--window-radius-sm);
+    font: inherit;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--text-dark);
+    padding: 9px 12px;
+    cursor: pointer;
+  }
+  .profile-menu-item:hover { background: var(--panel-inner); }
+  .profile-menu-item.signout { color: var(--grade-bad); }
+
+  /* ---------- One card, same as every other page ---------- */
+  .card {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    padding: 6px;
+  }
+  .card-inner {
+    padding: 22px 24px 20px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .section-head h2 {
+    font-size: 1rem;
+    font-weight: 800;
+    font-style: italic;
+    color: var(--text-dark);
+    margin: 0;
+  }
+  .contacts-total {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--text-faint);
+  }
+
+  /* ---------- Search bar — same pill input treatment used across the
+     app (messages.html's search, the color-swatch popups, etc.). ---------- */
+  .contacts-search-wrap { position: relative; margin: 14px 0 4px; }
+  .contacts-search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; stroke: var(--text-faint); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  #contactsSearch {
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    background: var(--panel-inner);
+    padding: 9px 14px 9px 34px;
+    font: inherit;
+    font-size: 0.82rem;
+    color: var(--text-dark);
+  }
+  #contactsSearch::placeholder { color: var(--text-faint); }
+  #contactsSearch:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+
+  /* ---------- Contact row — flat, alphabetical, no role/category
+     filters (2026-09-02, per Martin: real faculty records don't
+     consistently have a title/role filled in, so filtering or grouping
+     by it isn't reliable — a plain searchable list, same idea as
+     PowerSchool's own Faculty directory, works for everyone whether or
+     not their role happens to be on file). ---------- */
+  .contact-row { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--border); cursor: pointer; border-radius: var(--window-radius-sm); }
+  .contact-row:last-child { border-bottom: none; }
+  .contact-row:hover { background: var(--panel-inner); }
+  .contact-row:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring) inset; }
+  .contact-avatar {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.82rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .contact-text { flex: 1; min-width: 0; }
+  .contact-name { font-weight: 800; font-style: italic; font-size: 0.86rem; color: var(--text-dark); margin: 0; letter-spacing: -0.005em; }
+  .contact-role { font-weight: 500; font-size: 0.78rem; color: var(--text-muted); margin: 1px 0 0; }
+  .contact-meta { font-size: 0.68rem; color: var(--text-faint); margin: 2px 0 0; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Row-level Email quick-action (2026-09-02, per Martin) — a mailto:
+     link, so it works without opening the contact card at all; clicking
+     it stops the row's own click (which opens the card) from firing. */
+  .contact-email-btn {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--panel-bg);
+    color: var(--accent);
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    text-decoration: none;
+  }
+  .contact-email-btn:hover { background: var(--accent); color: #fff; }
+  .contact-email-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .contact-email-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .contacts-empty { font-size: 0.8rem; color: var(--text-faint); font-style: italic; padding: 10px 0; }
+
+  /* ---------- Contact detail modal — same .modal-overlay/.modal-box
+     component as course-home.html's course-info pop-out: dark full-page
+     backdrop, click on the backdrop (not the box) closes it, Escape
+     closes it. Standing popup convention for the whole app. ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10, 8, 6, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; z-index: 60;
+    opacity: 0; visibility: hidden; transition: opacity 0.15s ease;
+  }
+  .modal-overlay.show { opacity: 1; visibility: visible; }
+  .modal-box {
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-lg);
+    max-width: 380px; width: 100%;
+    padding: 22px 24px;
+    box-shadow: 0 30px 70px -20px rgba(0,0,0,0.6);
+    transform: translateY(8px);
+    transition: transform 0.15s ease;
+  }
+  .modal-overlay.show .modal-box { transform: translateY(0); }
+  .modal-close {
+    float: right;
+    background: var(--panel-inner);
+    border: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+  }
+  .modal-close:hover { color: var(--text-dark); }
+  .contact-modal-head { display: flex; align-items: center; gap: 12px; clear: both; padding-top: 4px; }
+  .contact-modal-avatar {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.05rem;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .modal-box h3 { margin: 0; font-size: 1.1rem; font-weight: 900; font-style: italic; color: var(--text-dark); }
+  .modal-code { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); margin: 2px 0 0; }
+  .modal-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+  .modal-row:last-of-type { border-bottom: none; }
+  .modal-row .k { color: var(--text-faint); font-weight: 700; }
+  .modal-row .v { color: var(--text-dark); font-weight: 700; text-align: right; }
+  .modal-rows { margin-top: 14px; }
+  /* Message + Email actions — always both present now (2026-09-02, per
+     Martin: every contact's card should offer a working Send Message
+     button alongside their email, not just current teachers). */
+  .contact-modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .contact-modal-btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    flex: 1;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 10px;
+    font: inherit;
+    font-weight: 800;
+    font-size: 0.82rem;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .contact-modal-btn:hover { background: var(--accent-dark); }
+  .contact-modal-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring); }
+  .contact-modal-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+  .contact-modal-btn.secondary { background: var(--panel-inner); color: var(--text-dark); }
+  .contact-modal-btn.secondary:hover { background: var(--border); }
+
+  /* ---------- Bottom nav — verbatim from every other page ---------- */
+  .app-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 20px;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .app-nav-inner {
+    display: flex;
+    gap: 4px;
+    width: 100%;
+    max-width: 940px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background: var(--panel-bg);
+    border-radius: var(--window-radius-md);
+    padding: 0 8px;
+    pointer-events: auto;
+  }
+  .app-nav-inner::-webkit-scrollbar { display: none; }
+  .nav-link {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    flex: 1;
+    min-width: 0;
+    padding: 12px 6px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-link .label { display: block; max-width: 100%; font-size: 0.72rem; font-weight: 800; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .nav-link:hover .label { color: var(--text-muted); }
+  .nav-link .dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .nav-link.active .label { color: var(--text-dark); }
+  .nav-link.active .dot { background: var(--accent); }
+  .nav-link:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring) inset; }
+  @media (max-width: 520px) {
+    .nav-link { min-width: 0; padding: 10px 3px 8px; }
+    .nav-link .label { font-size: 0.58rem; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1 class="title">Contacts</h1>
+        <p class="subtitle" id="contactsSub"></p>
+      </div>
+      <div class="profile-menu-wrap">
+        <button class="profile-btn" id="profileBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Profile and settings">M</button>
+        <div class="profile-menu" id="profileMenu" role="menu" hidden>
+          <button class="profile-menu-item" type="button" role="menuitem" data-action="settings">Settings</button>
+          <button class="profile-menu-item signout" type="button" role="menuitem" data-action="signout">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-inner">
+        <div class="section-head">
+          <h2>District Directory</h2>
+          <span class="contacts-total" id="contactsTotal"></span>
+        </div>
+        <div class="contacts-search-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="search" id="contactsSearch" placeholder="Search by name, role, subject, or school" autocomplete="off" aria-label="Search contacts">
+        </div>
+        <div id="contactsListBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="contactModal">
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalContactName">
+      <button class="modal-close" id="modalCloseBtn" type="button" aria-label="Close contact info">✕</button>
+      <div class="contact-modal-head">
+        <span class="contact-modal-avatar" id="modalAvatar"></span>
+        <div>
+          <h3 id="modalContactName"></h3>
+          <p class="modal-code" id="modalContactRole"></p>
+        </div>
+      </div>
+      <div class="modal-rows">
+        <div class="modal-row"><span class="k">Department</span><span class="v" id="modalDept"></span></div>
+        <div class="modal-row"><span class="k">School</span><span class="v" id="modalSchool"></span></div>
+        <div class="modal-row"><span class="k">Email</span><span class="v" id="modalEmail"></span></div>
+        <div class="modal-row"><span class="k">Phone</span><span class="v" id="modalPhone"></span></div>
+      </div>
+      <div class="contact-modal-actions">
+        <button class="contact-modal-btn" id="modalMessageBtn" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Message
+        </button>
+        <a class="contact-modal-btn secondary" id="modalEmailBtn" href="#">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+          Email
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <nav class="app-nav" aria-label="Main navigation">
+    <div class="app-nav-inner" id="dock">
+      <button class="nav-link" type="button" data-page="home" data-href="home.html">
+        <span class="label">Home</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="courses" data-href="courses.html">
+        <span class="label">Courses</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="grades" data-href="grades.html">
+        <span class="label">Grades</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="assignments" data-href="assignments.html">
+        <span class="label">Assignments</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="calendar" data-href="calendar.html">
+        <span class="label">Calendar</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="messages" data-href="messages.html">
+        <span class="label">Messages</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link active" type="button" data-page="contacts">
+        <span class="label">Contacts</span>
+        <span class="dot"></span>
+      </button>
+      <button class="nav-link" type="button" data-page="settings" data-href="settings.html">
+        <span class="label">Settings</span>
+        <span class="dot"></span>
+      </button>
+    </div>
+  </nav>
+
+  <script>
+    // ------------------------------------------------------------------
+    // Shared appearance (accent + background) — 2026-09-08, per Martin:
+    // "wallpapers + accent colors don't save across pages." Settings'
+    // Appearance section (and onboarding's Theme step) are the only
+    // writers of schoolagy_appearance; every other real app page,
+    // including this one, applies whatever's saved there, read-only, on
+    // its own load — same shared-localStorage-record pattern already
+    // used for schoolagy_dark_mode/schoolagy_profile.
+    // ------------------------------------------------------------------
+    (function () {
+      function darken(hex, amount) {
+        const n = parseInt(hex.slice(1), 16);
+        const r = Math.max(0, ((n >> 16) & 255) * (1 - amount));
+        const g = Math.max(0, ((n >> 8) & 255) * (1 - amount));
+        const b = Math.max(0, (n & 255) * (1 - amount));
+        return '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+      }
+      function applyAppearance() {
+        let saved = null;
+        try {
+          const raw = localStorage.getItem('schoolagy_appearance');
+          if (raw) saved = JSON.parse(raw);
+        } catch {}
+        if (!saved) return;
+        const root = document.documentElement.style;
+        if (saved.accent) {
+          root.setProperty('--accent', saved.accent);
+          root.setProperty('--accent-dark', saved.accentDark || darken(saved.accent, 0.22));
+        }
+        if (saved.background === 'white') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#f4f4f6';
+        } else if (saved.background === 'black') {
+          document.body.style.backgroundImage = 'none';
+          document.body.style.backgroundColor = '#0c0c0e';
+        } else if (saved.background) {
+          document.body.style.backgroundImage = `url("${saved.background}")`;
+          document.body.style.backgroundColor = '';
+        }
+      }
+      applyAppearance();
+      window.addEventListener('storage', e => {
+        if (e.key === 'schoolagy_appearance') applyAppearance();
+      });
+    })();
+
+    // ------------------------------------------------------------------
+    // Sample data — district directory (2026-09-02, per Martin: "I need
+    // to add a contact list of people in the district"). The six "My
+    // Teachers" entries intentionally reuse the exact same id/name/color
+    // keys as messages.html's TEACHERS object; everyone else's id is
+    // local to this page. Either way, every contact's Message button
+    // deep-links straight into a real thread with that person
+    // (messages.html?compose=<id>, carrying name/dept/color along for
+    // anyone messages.html doesn't already know about — see the wiring
+    // at the bottom of messages.html's own script).
+    //
+    // No role/department-based filtering or grouping here (removed
+    // 2026-09-02, per Martin: "teachers don't have to put roles, some do
+    // some don't" — a real PowerSchool/Schoology faculty record's title
+    // field is often just blank, so filtering or sectioning by it is
+    // unreliable). `role` is shown when a contact happens to have one on
+    // file and simply omitted otherwise — see contactRowHTML below —
+    // same as the reference Faculty page, where plenty of rows show just
+    // a name and no title underneath it. `category` is kept on the data
+    // only as a lightweight internal label (not shown or filtered on).
+    // ------------------------------------------------------------------
+    const CONTACTS = [
+      // My Teachers — same ids as messages.html's TEACHERS.
+      { id: 'cho', name: 'Mr. Cho', role: 'Teacher', dept: 'English Department', school: 'Lincoln High School', email: 'j.cho@lincolnusd.org', phone: '(555) 201-4471', color: '#6b8f5e', category: 'myTeachers' },
+      { id: 'alvarez', name: 'Mr. Alvarez', role: 'Teacher', dept: 'Science Department', school: 'Lincoln High School', email: 'r.alvarez@lincolnusd.org', phone: '(555) 201-4482', color: '#a67a22', category: 'myTeachers' },
+      { id: 'whitfield', name: 'Ms. Whitfield', role: 'Teacher', dept: 'Math Department', school: 'Lincoln High School', email: 'k.whitfield@lincolnusd.org', phone: '(555) 201-4493', color: '#5b6ea3', category: 'myTeachers' },
+      { id: 'bennett', name: 'Mrs. Bennett', role: 'Teacher', dept: 'Social Studies Department', school: 'Lincoln High School', email: 'l.bennett@lincolnusd.org', phone: '(555) 201-4504', color: '#a15c4f', category: 'myTeachers' },
+      { id: 'ortiz', name: 'Sra. Ortiz', role: 'Teacher', dept: 'World Languages Department', school: 'Lincoln High School', email: 'm.ortiz@lincolnusd.org', phone: '(555) 201-4515', color: '#8a6ba1', category: 'myTeachers' },
+      { id: 'reyes', name: 'Coach Reyes', role: 'Teacher', dept: 'Physical Education Department', school: 'Lincoln High School', email: 'd.reyes@lincolnusd.org', phone: '(555) 201-4526', color: '#4f8c8a', category: 'myTeachers' },
+      // Faculty — other teachers not currently teaching this student.
+      // (Nakamura's title is left blank on purpose — see comment above.)
+      { id: 'patterson', name: 'Ms. Patterson', role: 'Teacher', dept: 'Science Department', school: 'Lincoln High School', email: 'e.patterson@lincolnusd.org', phone: '(555) 201-4537', color: '#7a8f4f', category: 'faculty' },
+      { id: 'delgado', name: 'Mr. Delgado', role: 'Teacher', dept: 'Math Department', school: 'Lincoln High School', email: 'a.delgado@lincolnusd.org', phone: '(555) 201-4548', color: '#5b7ea3', category: 'faculty' },
+      { id: 'nakamura-t', name: 'Mrs. Nakamura', role: '', dept: 'English Department', school: 'Lincoln High School', email: 's.nakamura@lincolnusd.org', phone: '(555) 201-4559', color: '#8f6b7a', category: 'faculty' },
+      // Support & Administration — this school.
+      { id: 'simmons', name: 'Dr. Simmons', role: 'Principal', dept: 'Administration', school: 'Lincoln High School', email: 'c.simmons@lincolnusd.org', phone: '(555) 201-4001', color: '#946b3e', category: 'support' },
+      { id: 'osei', name: 'Mrs. Osei', role: 'Assistant Principal', dept: 'Administration', school: 'Lincoln High School', email: 'f.osei@lincolnusd.org', phone: '(555) 201-4012', color: '#6b8f8f', category: 'support' },
+      { id: 'foster', name: 'Ms. Foster', role: 'School Counselor', dept: 'Counseling', school: 'Lincoln High School', email: 'h.foster@lincolnusd.org', phone: '(555) 201-4023', color: '#6b7a9c', category: 'support' },
+      { id: 'okafor', name: 'Mr. Okafor', role: '', dept: 'Counseling', school: 'Lincoln High School', email: 'n.okafor@lincolnusd.org', phone: '(555) 201-4034', color: '#9c6b8a', category: 'support' },
+      { id: 'lindqvist', name: 'Mrs. Lindqvist', role: 'Librarian', dept: 'Media Center', school: 'Lincoln High School', email: 'a.lindqvist@lincolnusd.org', phone: '(555) 201-4045', color: '#7a7050', category: 'support' },
+      { id: 'ramirez', name: 'Nurse Ramirez', role: 'School Nurse', dept: 'Health Office', school: 'Lincoln High School', email: 'p.ramirez@lincolnusd.org', phone: '(555) 201-4056', color: '#a15c5c', category: 'support' },
+      { id: 'yusuf', name: 'Mr. Yusuf', role: '', dept: 'Athletics', school: 'Lincoln High School', email: 'b.yusuf@lincolnusd.org', phone: '(555) 201-4067', color: '#4f7a5c', category: 'support' },
+      // District Office — spans every school in the district, not just this one.
+      { id: 'whitmore', name: 'Dr. Whitmore', role: 'Superintendent', dept: 'District Office', school: 'Lincoln Unified School District', email: 't.whitmore@lincolnusd.org', phone: '(555) 201-1001', color: '#5c5c8a', category: 'district' },
+      { id: 'alvarado', name: 'Ms. Alvarado', role: 'IT Help Desk', dept: 'District Office', school: 'Lincoln Unified School District', email: 'helpdesk@lincolnusd.org', phone: '(555) 201-1002', color: '#4f7d8f', category: 'district' },
+      { id: 'chen', name: 'Mr. Chen', role: 'Director of Special Education', dept: 'District Office', school: 'Lincoln Unified School District', email: 'w.chen@lincolnusd.org', phone: '(555) 201-1003', color: '#8f6b4f', category: 'district' },
+    ];
+
+    /**
+     * Escapes a value for interpolation into an HTML string.
+     *
+     * CONTACTS is replaced at build time with live Schoology directory data,
+     * and staff names/departments are attacker-influenced text, so dropping
+     * them straight into an `.innerHTML` template would let a name like
+     * `<img src=x onerror=...>` execute in our origin. Coerces with String()
+     * rather than assuming a string, because nothing shape-checks the live
+     * bundle on the way in.
+     *
+     * NOTE: do not wrap values that are themselves HTML — escaping markup
+     * would print visible tags.
+     */
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+      ));
+    }
+
+    function initials(name) {
+      const parts = name.replace(/^(Mr\.|Mrs\.|Ms\.|Mx\.|Dr\.|Sra\.|Sr\.|Coach|Nurse)\s+/i, '').split(' ');
+      return parts.map(p => p[0]).join('').slice(0, 2).toUpperCase();
+    }
+
+    // Sorted by last name (title stripped first), matching the reference
+    // Faculty page's own ordering (Abassy, Alex, Alexander, Alexander,
+    // Alvarado, ...).
+    function lastNameKey(name) {
+      const stripped = name.replace(/^(Mr\.|Mrs\.|Ms\.|Mx\.|Dr\.|Sra\.|Sr\.|Coach|Nurse)\s+/i, '').trim();
+      const parts = stripped.split(/\s+/);
+      return parts[parts.length - 1].toLowerCase();
+    }
+    const CONTACTS_SORTED = [...CONTACTS].sort((a, b) => lastNameKey(a.name).localeCompare(lastNameKey(b.name)));
+
+    function contactRowHTML(c) {
+      return `
+        <div class="contact-row" role="button" tabindex="0" data-id="${escapeHtml(c.id)}" aria-label="${escapeHtml(c.name)}${c.role ? ', ' + escapeHtml(c.role) : ''}">
+          <span class="contact-avatar" style="background:${escapeHtml(c.color)}">${escapeHtml(initials(c.name))}</span>
+          <div class="contact-text">
+            <p class="contact-name">${escapeHtml(c.name)}</p>
+            ${c.role ? `<p class="contact-role">${escapeHtml(c.role)}</p>` : ''}
+            <p class="contact-meta">${escapeHtml(c.dept)} · ${escapeHtml(c.school)}</p>
+          </div>
+          <a class="contact-email-btn" href="mailto:${escapeHtml(c.email)}" aria-label="Email ${escapeHtml(c.name)}" onclick="event.stopPropagation()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+          </a>
+        </div>`;
+    }
+
+    function matchesQuery(c, q) {
+      if (!q) return true;
+      const hay = `${c.name} ${c.role} ${c.dept} ${c.school}`.toLowerCase();
+      return hay.includes(q);
+    }
+
+    function renderContactList() {
+      const q = contactsSearchInput.value.trim().toLowerCase();
+      const body = document.getElementById('contactsListBody');
+      const items = CONTACTS_SORTED.filter(c => matchesQuery(c, q));
+      body.innerHTML = items.length
+        ? items.map(contactRowHTML).join('')
+        : `<p class="contacts-empty">No contacts match "${escapeHtml(contactsSearchInput.value.trim())}".</p>`;
+    }
+
+    const contactsSearchInput = document.getElementById('contactsSearch');
+    contactsSearchInput.addEventListener('input', renderContactList);
+
+    renderContactList();
+    document.getElementById('contactsTotal').textContent = `${CONTACTS.length} people`;
+    document.getElementById('contactsSub').textContent = 'Staff & teachers · Lincoln Unified School District';
+
+    // ------------------------------------------------------------------
+    // Contact detail modal — same .modal-overlay/.modal-box open/close
+    // convention as course-home.html's course-info pop-out (darkens the
+    // rest of the page, backdrop click or Escape closes it).
+    // ------------------------------------------------------------------
+    const contactModal = document.getElementById('contactModal');
+    const modalMessageBtn = document.getElementById('modalMessageBtn');
+    const modalEmailBtn = document.getElementById('modalEmailBtn');
+
+    function openContactModal(c) {
+      document.getElementById('modalAvatar').textContent = initials(c.name);
+      document.getElementById('modalAvatar').style.background = c.color;
+      document.getElementById('modalContactName').textContent = c.name;
+      document.getElementById('modalContactRole').textContent = c.role || c.dept;
+      document.getElementById('modalDept').textContent = c.dept;
+      document.getElementById('modalSchool').textContent = c.school;
+      document.getElementById('modalEmail').textContent = c.email;
+      document.getElementById('modalPhone').textContent = c.phone;
+      // Every contact gets a working Message button now (2026-09-02, per
+      // Martin) — it deep-links into messages.html?compose=<id>, passing
+      // name/dept/color along too so messages.html can build a thread
+      // header for anyone that isn't already one of its own TEACHERS
+      // (see the wiring at the bottom of messages.html's own script).
+      modalMessageBtn.onclick = () => {
+        const url = `messages.html?compose=${encodeURIComponent(c.id)}`
+          + `&name=${encodeURIComponent(c.name)}`
+          + `&dept=${encodeURIComponent(c.dept)}`
+          + `&color=${encodeURIComponent(c.color)}`;
+        window.location.href = url;
+      };
+      modalEmailBtn.href = `mailto:${c.email}`;
+      contactModal.classList.add('show');
+      document.getElementById('modalCloseBtn').focus();
+    }
+    function closeContactModal() { contactModal.classList.remove('show'); }
+
+    document.getElementById('contactsListBody').addEventListener('click', e => {
+      const row = e.target.closest('.contact-row');
+      if (!row) return;
+      const c = CONTACTS.find(x => x.id === row.dataset.id);
+      if (c) openContactModal(c);
+    });
+    document.getElementById('contactsListBody').addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('.contact-row');
+      if (!row) return;
+      e.preventDefault();
+      const c = CONTACTS.find(x => x.id === row.dataset.id);
+      if (c) openContactModal(c);
+    });
+    document.getElementById('modalCloseBtn').addEventListener('click', closeContactModal);
+    contactModal.addEventListener('click', e => { if (e.target === contactModal) closeContactModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && contactModal.classList.contains('show')) closeContactModal(); });
+
+    // Deep link: contacts.html?open=<id> opens straight to that person's
+    // card (2026-09-08, added so messages.html's "View full contact" link
+    // — from the To box's contact info popup — actually lands on the right
+    // record instead of just the general directory).
+    (function openFromQueryParam() {
+      const id = new URLSearchParams(location.search).get('open');
+      if (!id) return;
+      const c = CONTACTS.find(x => x.id === id);
+      if (c) openContactModal(c);
+    })();
+
+    // Nav — Home/Courses/Grades/Assignments/Messages are real links
+    // between real pages (same full-mesh convention every other page
+    // uses); Calendar/Settings stay visual-only placeholders until those
+    // pages exist.
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        if (link.dataset.href) { window.location.href = link.dataset.href; return; }
+        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
+
+    // ------------------------------------------------------------------
+    // Profile menu — same behavior as every other page.
+    // ------------------------------------------------------------------
+    const profileBtn = document.getElementById('profileBtn');
+    // Shared profile photo/name (2026-09-07) — settings.html's Edit
+    // Profile modal is the only place this is ever set, but every other
+    // page's top-right profile button used to just show a fixed "M" no
+    // matter what was saved there: the button never read anything back,
+    // so a photo you set in Settings was invisible the moment you left
+    // it. schoolagy_profile is the same localStorage record
+    // settings.html writes on every save; this is read-only here.
+    (function () {
+      var profile = null;
+      try {
+        var raw = localStorage.getItem('schoolagy_profile');
+        if (raw) profile = JSON.parse(raw);
+      } catch (e) {}
+      if (!profile) return;
+      if (profile.photo) {
+        profileBtn.style.backgroundImage = 'url("' + profile.photo + '")';
+        profileBtn.style.backgroundSize = 'cover';
+        profileBtn.style.backgroundPosition = 'center';
+        profileBtn.textContent = '';
+      } else if (profile.name) {
+        profileBtn.textContent = profile.name.trim().charAt(0).toUpperCase() || 'M';
+      }
+    })();
+    const profileMenu = document.getElementById('profileMenu');
+    function openProfileMenu() { profileMenu.hidden = false; profileBtn.setAttribute('aria-expanded', 'true'); }
+    function closeProfileMenu() { profileMenu.hidden = true; profileBtn.setAttribute('aria-expanded', 'false'); }
+    profileBtn.addEventListener('click', () => { if (profileMenu.hidden) openProfileMenu(); else closeProfileMenu(); });
+    document.addEventListener('click', e => { if (!profileMenu.hidden && !e.target.closest('.profile-menu-wrap')) closeProfileMenu(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !profileMenu.hidden) { closeProfileMenu(); profileBtn.focus(); } });
+    profileMenu.querySelectorAll('.profile-menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (item.dataset.action === 'settings') { window.location.href = 'settings.html'; return; }
+        closeProfileMenu();
+      });
+    });
+  </script>
+</body>
+</html>
